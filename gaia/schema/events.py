@@ -42,6 +42,7 @@ class Protocol(str, Enum):
 class Domain(str, Enum):
     synthetic = "synthetic"
     real = "real"
+    public = "public"
 
 
 @dataclass(frozen=True, slots=True)

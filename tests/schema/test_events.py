@@ -19,3 +19,5 @@ def test_numpy_float_values_normalised():
     t = events_to_table([_ev(value=np.float64(1.0), prev_value=np.float64(0.5))])
     assert t.column("value").to_pylist() == ["1.0"]
     assert t.column("prev_value").to_pylist() == ["0.5"]
+def test_domain_public_value():
+    assert Domain.public.value == "public"
