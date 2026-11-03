@@ -57,3 +57,21 @@ def test_last_awake_leaver_never_leaves_light_silently_on():
                       and e.ts_utc >= exit_ts for e in run.events)
     waste_on_exit = any(w.load_id == load and w.start_ts_utc == exit_ts for w in run.gt_waste)
     assert off_on_exit or waste_on_exit
+
+
+def test_bedroom_light_and_sleep_causes_over_a_month():
+    # Wind-down and wake-up are awake activities in the bedroom, so the main light comes on
+    # in the dark, and sleep onset with the light on is a labelled sleep switch-off.
+    bedroom_on = 0
+    sleep_causes = 0
+    for archetype in ("apartment_2bhk", "apartment_3bhk", "apartment_4bhk"):
+        for seed in (11, 12, 13):
+            spec = HomeSpec(home_id="h1", home_seed=seed, city="hyderabad", archetype=archetype,
+                            start_date=date(2026, 11, 2), days=30, festivals=frozenset())
+            r = simulate_home(spec)
+            main_ids = {ld.load_id for ld in r.manifest.loads if ld.is_main_light}
+            bedroom_on += sum(1 for e in r.events if e.kind == EventKind.command and e.value == 1.0
+                              and e.room_type == "bedroom" and e.load_id in main_ids)
+            sleep_causes += sum(1 for c in r.gt_cause if c.cause == "sleep")
+    assert bedroom_on > 0
+    assert sleep_causes > 0

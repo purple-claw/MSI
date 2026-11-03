@@ -85,3 +85,36 @@ def test_homemaker_has_lunch_in_living_and_short_cooks(seed, day_type):
             assert a.end_min - a.start_min <= 60 + 5, a
     rest = next(a for a in acts if a.name == "rest")
     assert rest.start_min == 840
+
+
+@settings(max_examples=300)
+@given(
+    seed=st.integers(min_value=0, max_value=2**31 - 1),
+    persona_name=st.sampled_from(PERSONA_NAMES),
+    day_type=st.sampled_from(list(DayType)),
+)
+def test_wake_up_and_wind_down_bookend_the_sleeps(seed, persona_name, day_type):
+    acts = plan_day(PERSONAS[persona_name], day_type, rng_for(seed, "day"))
+    names = [a.name for a in acts]
+    assert names[0] == "sleep" and names[1] == "wake_up"
+    assert names[-2] == "wind_down" and names[-1] == "sleep"
+    wake_up, wind_down = acts[1], acts[-2]
+    assert wake_up.room == "own_bedroom" and wind_down.room == "own_bedroom"
+    assert wake_up.start_min == acts[0].end_min
+    assert wind_down.end_min == acts[-1].start_min
+    assert wake_up.end_min - wake_up.start_min >= 5
+    assert wind_down.end_min - wind_down.start_min >= 5
+    assert "wake_up" not in names[2:] and "wind_down" not in names[:-2]
+
+
+def test_wind_down_is_fifteen_minutes_before_a_fixed_sleep():
+    for base in ("working_professional", "homemaker"):
+        persona = replace(PERSONAS[base], sleep_min=(1380, 0))
+        for day_type in DayType:
+            acts = plan_day(persona, day_type, rng_for(5, "day"))
+            wind_down = acts[-2]
+            assert wind_down.start_min == 1365
+            assert wind_down.end_min == 1380
+            assert acts[-1].start_min == 1380
+            assert acts[-2].name == "wind_down"
+            assert acts[-3].end_min == 1365

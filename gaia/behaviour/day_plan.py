@@ -14,6 +14,8 @@ from gaia.world.calendar import DayType
 
 MIN_BLOCK = 5
 DAY = 1440
+WAKE_UP = 5  # awake in bed after the leading sleep, before the bath or cook
+WIND_DOWN = 15  # awake in bed right before the final sleep
 
 
 @dataclass(frozen=True)
@@ -41,13 +43,15 @@ def _sample(rng: np.random.Generator, spec: tuple[float, float]) -> int:
 def _professional_workday(wake: int, leave: int, ret: int, sleep: int, wake_next: int) -> list[_Block]:
     return [
         _Block("sleep", "own_bedroom", until=wake),
+        _Block("wake_up", "own_bedroom", dur=WAKE_UP),
         _Block("bath", "own_bathroom", dur=20),
         _Block("breakfast", "kitchen", dur=20),
         _Block("living", "living", until=leave),
         _Block("away", None, clock=leave, until=ret),
         _Block("relax", "living", until=ret + 60),
         _Block("dinner", "kitchen", clock=ret + 60, dur=30),
-        _Block("tv", "living", until=sleep),
+        _Block("tv", "living", until=sleep - WIND_DOWN),
+        _Block("wind_down", "own_bedroom", clock=sleep - WIND_DOWN, dur=WIND_DOWN),
         _Block("sleep", "own_bedroom", clock=sleep, until=DAY + wake_next),
     ]
 
@@ -55,11 +59,13 @@ def _professional_workday(wake: int, leave: int, ret: int, sleep: int, wake_next
 def _professional_leisure(wake: int, sleep: int, wake_next: int) -> list[_Block]:
     return [
         _Block("sleep", "own_bedroom", until=wake),
+        _Block("wake_up", "own_bedroom", dur=WAKE_UP),
         _Block("bath", "own_bathroom", dur=20),
         _Block("breakfast", "kitchen", dur=20),
         _Block("relax", "living", until=780),
         _Block("lunch", "kitchen", clock=780, dur=30),
-        _Block("tv", "living", until=sleep),
+        _Block("tv", "living", until=sleep - WIND_DOWN),
+        _Block("wind_down", "own_bedroom", clock=sleep - WIND_DOWN, dur=WIND_DOWN),
         _Block("sleep", "own_bedroom", clock=sleep, until=DAY + wake_next),
     ]
 
@@ -67,6 +73,7 @@ def _professional_leisure(wake: int, sleep: int, wake_next: int) -> list[_Block]
 def _homemaker(wake: int, sleep: int, wake_next: int) -> list[_Block]:
     return [
         _Block("sleep", "own_bedroom", until=wake),
+        _Block("wake_up", "own_bedroom", dur=WAKE_UP),
         _Block("bath", "own_bathroom", dur=20),
         _Block("cook", "kitchen", dur=60),
         _Block("living", "living", until=720),
@@ -75,7 +82,8 @@ def _homemaker(wake: int, sleep: int, wake_next: int) -> list[_Block]:
         _Block("rest", "own_bedroom", clock=840, dur=60),
         _Block("living", "living", until=1170),
         _Block("cook", "kitchen", clock=1170, dur=60),
-        _Block("tv", "living", until=sleep),
+        _Block("tv", "living", until=sleep - WIND_DOWN),
+        _Block("wind_down", "own_bedroom", clock=sleep - WIND_DOWN, dur=WIND_DOWN),
         _Block("sleep", "own_bedroom", clock=sleep, until=DAY + wake_next),
     ]
 
