@@ -68,3 +68,20 @@ def test_homemaker_has_no_away():
     for day_type in DayType:
         acts = plan_day(PERSONAS["homemaker"], day_type, rng_for(9, "day"))
         assert all(a.room is not None for a in acts)
+
+
+@settings(max_examples=300)
+@given(
+    seed=st.integers(min_value=0, max_value=2**31 - 1),
+    day_type=st.sampled_from(list(DayType)),
+)
+def test_homemaker_has_lunch_in_living_and_short_cooks(seed, day_type):
+    acts = plan_day(PERSONAS["homemaker"], day_type, rng_for(seed, "day"))
+    lunches = [a for a in acts if a.name == "lunch"]
+    assert len(lunches) == 1
+    assert lunches[0].room == "living"
+    for a in acts:
+        if a.name == "cook":
+            assert a.end_min - a.start_min <= 60 + 5, a
+    rest = next(a for a in acts if a.name == "rest")
+    assert rest.start_min == 840

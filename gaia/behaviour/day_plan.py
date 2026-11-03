@@ -71,6 +71,7 @@ def _homemaker(wake: int, sleep: int, wake_next: int) -> list[_Block]:
         _Block("cook", "kitchen", dur=60),
         _Block("living", "living", until=720),
         _Block("cook", "kitchen", clock=720, dur=60),
+        _Block("lunch", "living", until=840),
         _Block("rest", "own_bedroom", clock=840, dur=60),
         _Block("living", "living", until=1170),
         _Block("cook", "kitchen", clock=1170, dur=60),
