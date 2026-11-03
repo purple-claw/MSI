@@ -1,0 +1,7 @@
+world_version: g1
+seed: 2026
+homes: 8
+days: 30
+start_date: 2026-11-02
+cities: [hyderabad, bengaluru]
+out_dir: data/g1-smoke
