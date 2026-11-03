@@ -149,7 +149,7 @@ def test_event_is_frozen():
 
 ---
 
-### Task 4: Home: manifest and `apartment_2bhk` archetype
+### Task 4: Home: manifest and apartment archetypes (1RK to 4BHK)
 
 **Files:**
 - Create: `gaia/home/__init__.py`, `gaia/home/manifest.py`, `gaia/home/archetypes.py`
@@ -161,14 +161,18 @@ def test_event_is_frozen():
   - `@dataclass(frozen=True) class Room: room_id:str; room_type:str; window_factor:float`
   - `@dataclass(frozen=True) class Load: load_id:str; room_id:str; load_class:str; protocol:Protocol; is_main_light:bool`
   - `@dataclass(frozen=True) class HomeManifest: home_id:str; archetype:str; city:str; rooms:tuple[Room,...]; adjacency:dict[str,tuple[str,...]]; loads:tuple[Load,...]`, plus `to_json() -> str` (sorted keys, stable), `loads_in(room_id) -> tuple[Load,...]`, `main_light(room_id) -> Load | None`
-  - `ARCHETYPES: dict[str, Callable[[str, str, numpy.random.Generator], HomeManifest]]` (args: `home_id, city, rng`). G1 registers only `"apartment_2bhk"`.
-  - `apartment_2bhk` layout: rooms `living`(window_factor 0.03), `kitchen`(0.02), `master_bedroom`(0.02), `bedroom_2`(0.02), `bathroom`(0.005). Every room is adjacent only to `living` (hub). Loads: every room has one main light (`light.dim` with p=0.5 else `light.onoff`). Living, master and bedroom_2 have `fan.speed`. Master has `ac` with p=0.8, bedroom_2 with p=0.4. Living has `tv_media`. Kitchen has `exhaust`. Bathroom has `geyser` with p=0.5. Protocol per load: knx 0.6, zigbee 0.25, matter 0.15. IDs: `room_id = f"{home_id}:{room_type}"`, `load_id = f"{room_id}:{load_class}:{n}"`.
+  - `@dataclass(frozen=True) class ApartmentSpec: name:str; bedrooms:int; bathrooms:int; has_separate_living:bool; household_size:tuple[int,int]` (min and max members)
+  - `APARTMENTS: dict[str, ApartmentSpec]`. This is **data, not code per type**. Adding a layout is one row:
+    `apartment_1rk`(0 bedrooms, 1 bath, no separate living, 1–2) · `apartment_1bhk`(1, 1, yes, 1–2) · `apartment_2bhk`(2, 2, yes, 2–3) · `apartment_3bhk`(3, 3, yes, 2–4) · `apartment_4bhk`(4, 4, yes, 3–5)
+  - `build_apartment(spec: ApartmentSpec, home_id:str, city:str, rng) -> HomeManifest`, and `ARCHETYPES: dict[str, Callable[[str, str, Generator], HomeManifest]]` with one entry per `APARTMENTS` key (a partial of `build_apartment`).
+  - Rooms: `living` (window_factor 0.03; in a 1RK it is the only room and is also where people sleep), `kitchen` (0.02), `bedroom_1..N` (0.02; `bedroom_1` is the master), `bathroom_1..M` (0.005). Every room is adjacent only to `living` (hub).
+  - Loads: every room has one main light (`light.dim` with p=0.5 else `light.onoff`). Living and every bedroom have `fan.speed`. `bedroom_1` has `ac` with p=0.8, other bedrooms p=0.4; in a 1RK, `living` has `ac` with p=0.5. Living has `tv_media`. Kitchen has `exhaust`. Each bathroom has `geyser` with p=0.5. Protocol per load: knx 0.6, zigbee 0.25, matter 0.15. IDs: `room_id = f"{home_id}:{room_name}"` (e.g. `bedroom_2`), `room_type` is the name without the index (`bedroom`, `bathroom`, `living`, `kitchen`), `load_id = f"{room_id}:{load_class}:{n}"`.
 
-- [ ] **Step 1: Failing tests**: `test_every_room_has_one_main_light` (200 seeds), `test_rooms_connected_via_living`, `test_same_seed_same_manifest_json`, `test_load_classes_registered` (every `load.load_class` is in `REGISTRY`), `test_protocol_mix_roughly_matches` (over 500 homes, knx share in [0.55, 0.65]).
+- [ ] **Step 1: Failing tests** (parametrised over all 5 archetypes where it applies): `test_every_room_has_one_main_light` (200 seeds), `test_room_counts_match_spec` (bedrooms and bathrooms equal `ApartmentSpec`; 1RK has rooms exactly {living, kitchen, bathroom_1}), `test_rooms_connected_via_living`, `test_same_seed_same_manifest_json`, `test_load_classes_registered` (every `load.load_class` is in `REGISTRY`), `test_protocol_mix_roughly_matches` (over 500 homes, knx share in [0.55, 0.65]).
 - [ ] **Step 2: Run** `uv run pytest tests/home -v` → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(gaia): home manifest and apartment_2bhk archetype`
+- [ ] **Step 5: Commit** `feat(gaia): home manifest and 1RK-4BHK apartment archetypes`
 
 ---
 
@@ -185,12 +189,13 @@ def test_event_is_frozen():
   - `PERSONAS` with exactly two G1 entries (TUS calibration replaces these numbers in G2):
     - `working_professional`: wake (405, 25), sleep (1395, 30), leave (525, 20), return (1140, 40), forgetfulness 0.15, tech_affinity {wall 0.6, app 0.3, voice 0.1}, threshold 150
     - `homemaker`: wake (360, 20), sleep (1350, 25), leave None, return None, forgetfulness 0.08, tech_affinity {wall 0.8, app 0.1, voice 0.1}, threshold 120
-  - `@dataclass(frozen=True) class Household: members:tuple[tuple[str, Persona], ...]` (person_id, persona). `make_household(home_id:str, rng) -> Household` returns either {professional, homemaker} (p=0.6) or {professional, professional} (p=0.4). Person ids are `f"{home_id}:p{n}"`.
-  - `@dataclass(frozen=True) class Activity: name:str; room_type:str|None; start_min:int; end_min:int` (minutes from local midnight of the plan day; `room_type=None` means away; `end_min` may exceed 1440 only for the final `sleep`)
+  - `@dataclass(frozen=True) class Member: person_id:str; persona:Persona; bedroom:str; bathroom:str` (room names from the manifest)
+  - `@dataclass(frozen=True) class Household: members:tuple[Member, ...]`. `make_household(manifest: HomeManifest, spec: ApartmentSpec, rng) -> Household`: size uniform in `spec.household_size`. The first member is a `working_professional`. Each further member is a `homemaker` with p=0.5, else a `working_professional`. Bedrooms: couples (the first two members) share `bedroom_1`, and later members fill `bedroom_2..N` and then share round-robin. In a 1RK everyone sleeps in `living`. Bathrooms are assigned round-robin. Person ids are `f"{home_id}:p{n}"`.
+  - `@dataclass(frozen=True) class Activity: name:str; room:str|None; start_min:int; end_min:int` (minutes from local midnight of the plan day; `room` is a symbolic slot: `own_bedroom`, `own_bathroom`, `living`, `kitchen`, or `None` for away. The engine resolves slots through `Member`. `end_min` may exceed 1440 only for the final `sleep`)
   - `plan_day(persona: Persona, day_type: DayType, rng) -> list[Activity]`: contiguous cover from `0` to `wake`, then to the next day's `sleep` end. Templates:
-    - professional, workday: `sleep(master_bedroom)` 0→wake · `bath(bathroom)` 20 min · `breakfast(kitchen)` 20 min · `living` until leave · `away(None)` leave→return · `relax(living)` · `dinner(kitchen)` 30 min starting at return+60 · `tv(living)` until sleep · `sleep(master_bedroom)` sleep→1440+wake_next(=wake)
+    - professional, workday: `sleep(own_bedroom)` 0→wake · `bath(own_bathroom)` 20 min · `breakfast(kitchen)` 20 min · `living` until leave · `away(None)` leave→return · `relax(living)` · `dinner(kitchen)` 30 min starting at return+60 · `tv(living)` until sleep · `sleep(own_bedroom)` sleep→1440+wake_next(=wake)
     - professional, weekend or festival: same without away. Wake +60 min. `relax(living)` all day with `lunch(kitchen)` 30 min at 780.
-    - homemaker, any day: `sleep` · `bath` 20 · `cook(kitchen)` 60 · `living` · `cook(kitchen)` 60 at 720 · `rest(master_bedroom)` 60 at 840 · `living` · `cook(kitchen)` 60 at 1170 · `tv(living)` · `sleep`
+    - homemaker, any day: `sleep` · `bath` 20 · `cook(kitchen)` 60 · `living` · `cook(kitchen)` 60 at 720 · `rest(own_bedroom)` 60 at 840 · `living` · `cook(kitchen)` 60 at 1170 · `tv(living)` · `sleep`
     - Sampled times are rounded to whole minutes and clamped so the order always holds (each activity ≥ 5 min).
 
 - [ ] **Step 1: Failing tests**
@@ -198,6 +203,7 @@ def test_event_is_frozen():
   - `test_sleep_after_midnight_wraps` (Review Focus 1): a persona with `sleep_min=(1470, 0)` (00:30) yields a final `sleep` activity starting at 1470 and no activity with `end_min < start_min`.
   - `test_professional_workday_has_away`, `test_weekend_has_no_away`.
   - `test_household_ids_stable`: same seed gives the same person ids and roles.
+  - `test_household_fits_home`: for every archetype over 200 seeds, member count is in `household_size`, every `Member.bedroom` and `Member.bathroom` is a room in the manifest, and 1RK members all have `bedroom == "living"`.
 - [ ] **Step 2: Run** `uv run pytest tests/household tests/behaviour -v` → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** → PASS.
@@ -243,7 +249,7 @@ def test_event_is_frozen():
   - `simulate_home(spec: HomeSpec) -> SimResult`
 
 **Algorithm** (the tests don't pin this down, so it's fixed here):
-1. Build the manifest (`ARCHETYPES[spec.archetype]`, rng layer `"home"`) and the household (layer `"household"`).
+1. Build the manifest (`ARCHETYPES[spec.archetype]`, rng layer `"home"`) and the household (`make_household(manifest, APARTMENTS[spec.archetype], rng)`, layer `"household"`). Resolve each activity's symbolic room slot through its `Member` (`own_bedroom` → `member.bedroom`, `own_bathroom` → `member.bathroom`).
 2. For each local day, plan each member's day (layer `f"plan/{person_id}/{day_index}"`). Combine the plans into per-person intervals in UTC ms (`local_midnight_utc_ms` + minutes). A plan's trailing sleep overlapping the next day's leading sleep is merged.
 3. Step a 1-minute clock over the whole range. Each tick: compute the sun and lux once (append a `ContextRow` every 15 minutes, not every minute). Each person's current room comes from their interval.
 4. **Room entry** or **every tick while present**: if the room's main light is off and `light_needed` holds, emit a `command` (source from `choose_source`, actor = person, ts = tick + rng jitter 0–59 s), then a `state` event at `+latency_ms` with `ref_id` = the command id. Record `GtCause(need_light)`.
@@ -270,7 +276,7 @@ def test_lights_on_after_sunset_not_noon():
     assert sum(17 <= h <= 23 for h in on_hours_ist) > sum(11 <= h <= 14 for h in on_hours_ist)
 ```
 
-  `tests/engine/test_invariants.py` (hypothesis, `max_examples=25`, seeds 0–10⁶, days=3):
+  `tests/engine/test_invariants.py` (hypothesis, `max_examples=25`, seeds 0–10⁶, archetype sampled from all 5, days=3):
   - `test_ts_monotonic`: event timestamps never decrease.
   - `test_every_state_has_command`: each `state` event's `ref_id` is an earlier `command` id in the same home.
   - `test_no_redundant_state`: per load, consecutive `state` values alternate (never on→on or off→off).
@@ -311,7 +317,7 @@ def test_lights_on_after_sunset_not_noon():
 **Interfaces:**
 - Consumes: `simulate_home`, `write_home`, `CITIES`, `ARCHETYPES`, `derive_seed`.
 - Produces:
-  - pydantic `RunConfig`: `world_version:str`, `seed:int`, `homes:int (gt 0)`, `days:int (gt 0)`, `start_date:date`, `cities:list[str]` (each must be in `CITIES`), `archetypes:list[str]=["apartment_2bhk"]` (each in `ARCHETYPES`), `festivals:list[date]=[]`, `split:str="train"`, `out_dir:Path`, `workers:int=0` (0 means `os.cpu_count()`)
+  - pydantic `RunConfig`: `world_version:str`, `seed:int`, `homes:int (gt 0)`, `days:int (gt 0)`, `start_date:date`, `cities:list[str]` (each must be in `CITIES`), `archetypes:list[str]=list(APARTMENTS)` (each in `ARCHETYPES`; homes are spread across them), `festivals:list[date]=[]`, `split:str="train"`, `out_dir:Path`, `workers:int=0` (0 means `os.cpu_count()`)
   - `load_config(path: Path) -> RunConfig` (YAML)
   - `home_spec(cfg: RunConfig, index: int) -> HomeSpec`: `home_id=f"h{cfg.seed}-{index:06d}"`, `home_seed=derive_seed(cfg.seed, "home", index)`. City and archetype are chosen with `rng_for(home_seed, "assign")`. This depends only on (seed, index) (Review Focus 3).
   - `generate(cfg: RunConfig) -> dict` runs a `ProcessPoolExecutor` over indices and returns `{"homes": n, "events": total, "seconds": t, "home_years_per_hour": x}`
@@ -327,7 +333,7 @@ def test_lights_on_after_sunset_not_noon():
 - [ ] **Step 3: Implement** config, CLI and `generate`.
 - [ ] **Step 4: Run** → PASS. Then the full suite `uv run pytest -q` → all PASS.
 - [ ] **Step 5: Measure throughput.** `scripts/bench_g1.py` simulates 4 homes × 365 days on 1 worker and prints seconds per home-year.
-  Run `uv run python scripts/bench_g1.py`. Record the number in `docs/plans/gaia-spec.md` §7 as "G1 measured: X s per home-year (target < 10 s)". If it misses the target, note it. Don't optimise in this plan.
+  Run `uv run python scripts/bench_g1.py`. Report the number to the orchestrator, which records it in agres (no doc edit). If it misses the < 10 s target, say so. Don't optimise in this plan.
 - [ ] **Step 6: Smoke run.** `uv run python -m gaia generate configs/g1-smoke.yaml` → JSON with `homes: 8` and `events > 0`.
 - [ ] **Step 7: Commit** `feat(gaia): run config, CLI, parallel generation, G1 benchmark`
 
