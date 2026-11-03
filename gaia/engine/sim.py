@@ -98,6 +98,7 @@ class _Run:
         self.rng = rng_for(spec.home_seed, "engine")
         self.mains: list[Load | None] = [manifest.main_light(r.room_id) for r in manifest.rooms]
         self.light_on = [False] * len(manifest.rooms)
+        self.last_state_ts = [-1] * len(manifest.rooms)  # per main-light load, for ordering
         self.open_waste: dict[int, tuple[str, int]] = {}
         self.events: list[Event] = []
         self.gt_cause: list[GtCause] = []
@@ -118,6 +119,7 @@ class _Run:
                 if m > 0:
                     self._leave(i, m, tick)
                     self._fall_asleep(i, m, tick)
+                self._close_waste_on_entry(i, m, tick)
                 self._presence(i, m, tick)
 
     def finish(self) -> None:
@@ -159,6 +161,13 @@ class _Run:
                     self._switch(r, False, tick, Source.app, member.person_id, "forgot_cleanup",
                                  member.person_id, SLEEP)
 
+    def _close_waste_on_entry(self, i: int, m: int, tick: int) -> None:
+        """A waste interval means light on with no awake member in the room: an awake entry ends it."""
+        r = self.rooms[i][m]
+        if r >= 0 and self.acts[i][m] != SLEEP_CODE and r in self.open_waste:
+            pid, start = self.open_waste.pop(r)
+            self.gt_waste.append(GtWaste(self.mains[r].load_id, pid, start, tick))
+
     def _presence(self, i: int, m: int, tick: int) -> None:
         act, r = self.acts[i][m], self.rooms[i][m]
         if act == SLEEP_CODE or r < 0 or self.light_on[r] or self.mains[r] is None:
@@ -199,11 +208,12 @@ class _Run:
         load = self.mains[r]
         room = self.manifest.rooms[r]
         new, old = (1.0, 0.0) if on else (0.0, 1.0)
-        cmd_ts = tick + int(self.rng.integers(0, MS_PER_MIN))
+        cmd_ts = max(tick + int(self.rng.integers(0, MS_PER_MIN)), self.last_state_ts[r] + 1)
         cmd_id = self._next_id()
         self._emit(cmd_ts, EventKind.command, r, new, old, source, actor, None, cmd_id)
         self.gt_cause.append(GtCause(cmd_id, cause, person_id, activity))
-        state_ts = cmd_ts + latency_ms(load.protocol, self.rng)
+        state_ts = max(cmd_ts + latency_ms(load.protocol, self.rng), self.last_state_ts[r] + 1)
+        self.last_state_ts[r] = state_ts
         self._emit(state_ts, EventKind.state, r, new, old, source, actor, cmd_id, self._next_id())
         self.light_on[r] = on
         if not on and r in self.open_waste:
@@ -223,12 +233,11 @@ class _Run:
         ))
 
 
-def simulate_home(spec: HomeSpec) -> SimResult:
-    city = CITIES[spec.city]
+def _build_grids(spec: HomeSpec) -> tuple[HomeManifest, Household, list[list[int]], list[list[int]], list[str]]:
+    """Build the manifest, household and per-person minute grids (rooms, activity codes, names)."""
     manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
     apartment = APARTMENTS[spec.archetype]
     household = make_household(manifest, apartment, rng_for(spec.home_seed, "household"))
-    start_ms = local_midnight_utc_ms(spec.start_date, city.tz_offset_min)
     total = spec.days * MINUTES_PER_DAY
     room_index = {room.room_id: i for i, room in enumerate(manifest.rooms)}
 
@@ -246,7 +255,13 @@ def simulate_home(spec: HomeSpec) -> SimResult:
         rooms.append(room_arr.tolist())
         acts.append(act_arr.tolist())
     act_names = [name for name, _ in sorted(act_codes.items(), key=lambda kv: kv[1])]
+    return manifest, household, rooms, acts, act_names
 
+
+def simulate_home(spec: HomeSpec) -> SimResult:
+    manifest, household, rooms, acts, act_names = _build_grids(spec)
+    start_ms = local_midnight_utc_ms(spec.start_date, CITIES[spec.city].tz_offset_min)
+    total = spec.days * MINUTES_PER_DAY
     run = _Run(spec, manifest, household, start_ms, rooms, acts, act_names)
     run.run(total)
     run.finish()
