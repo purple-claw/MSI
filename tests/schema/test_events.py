@@ -14,3 +14,8 @@ def test_event_is_frozen():
     import dataclasses, pytest
     with pytest.raises(dataclasses.FrozenInstanceError):
         _ev().value = 0.0
+def test_numpy_float_values_normalised():
+    import numpy as np
+    t = events_to_table([_ev(value=np.float64(1.0), prev_value=np.float64(0.5))])
+    assert t.column("value").to_pylist() == ["1.0"]
+    assert t.column("prev_value").to_pylist() == ["0.5"]

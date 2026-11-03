@@ -92,7 +92,7 @@ def _value_to_str(value: float | str | None) -> str | None:
     if value is None:
         return None
     if isinstance(value, float):
-        return repr(value)
+        return repr(float(value))
     return str(value)
 
 
