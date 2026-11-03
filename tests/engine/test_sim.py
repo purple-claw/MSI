@@ -1,7 +1,11 @@
 from datetime import date
 
-from gaia.engine.sim import HomeSpec, simulate_home
+from gaia.engine.sim import HomeSpec, _Run, simulate_home
+from gaia.home.archetypes import APARTMENTS, ARCHETYPES
+from gaia.household.personas import Household, make_household
+from gaia.rng import rng_for
 from gaia.schema.events import EventKind
+from gaia.world.calendar import local_midnight_utc_ms
 
 
 def _spec(seed=1, days=7):
@@ -24,3 +28,32 @@ def test_lights_on_after_sunset_not_noon():
     on_hours_ist = [((e.ts_utc // 60000 + 330) // 60) % 24 for e in r.events
                     if e.kind == EventKind.command and e.value == 1.0 and e.room_type == "living"]
     assert sum(17 <= h <= 23 for h in on_hours_ist) > sum(11 <= h <= 14 for h in on_hours_ist)
+
+
+def test_last_awake_leaver_never_leaves_light_silently_on():
+    # A (asleep from minute 10) and B (awake, light on, leaves for living at minute 50) share bedroom_1.
+    spec = HomeSpec(home_id="h1", home_seed=3, city="hyderabad", archetype="apartment_2bhk",
+                    start_date=date(2026, 11, 2), days=1, festivals=frozenset())
+    manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
+    household = make_household(manifest, APARTMENTS[spec.archetype], rng_for(spec.home_seed, "household"))
+    a, b = household.members[0], household.members[1]
+    assert a.bedroom == b.bedroom == "bedroom_1"
+    index = {r.room_id: i for i, r in enumerate(manifest.rooms)}
+    bed, living = index["h1:bedroom_1"], index["h1:living"]
+    total = 120
+    act_names = ["sleep", "tv", "living"]  # code 0 must be sleep
+    rooms = [[bed] * total, [bed] * 50 + [living] * (total - 50)]
+    acts = [[1] * 10 + [0] * (total - 10), [1] * 50 + [2] * (total - 50)]
+    run = _Run(spec, manifest, Household(members=(a, b)),
+               local_midnight_utc_ms(spec.start_date, 330), rooms, acts, act_names)
+    run.run(total)
+    run.finish()
+
+    start = local_midnight_utc_ms(spec.start_date, 330)
+    exit_ts = start + 50 * 60_000
+    load = manifest.main_light("h1:bedroom_1").load_id
+    assert any(e.kind == EventKind.state and e.load_id == load and e.value == 1.0 for e in run.events)
+    off_on_exit = any(e.kind == EventKind.command and e.load_id == load and e.value == 0.0
+                      and e.ts_utc >= exit_ts for e in run.events)
+    waste_on_exit = any(w.load_id == load and w.start_ts_utc == exit_ts for w in run.gt_waste)
+    assert off_on_exit or waste_on_exit

@@ -131,7 +131,7 @@ class _Run:
 
     def _leave(self, i: int, m: int, tick: int) -> None:
         prev, cur = self.rooms[i][m - 1], self.rooms[i][m]
-        if prev == cur or prev < 0 or not self.light_on[prev] or self._occupied(prev, m, skip=i):
+        if prev == cur or prev < 0 or not self.light_on[prev] or self._awake_occupied(prev, m, skip=i):
             return
         member = self.members[i]
         if forgets(member.persona, self.rng):
@@ -156,7 +156,7 @@ class _Run:
         for r in range(len(self.mains)):
             if self.light_on[r] and not self._occupied(r, m):
                 if self.rng.random() < 0.5:
-                    self._switch(r, False, tick, Source.app, self.spec.home_id, "forgot_cleanup",
+                    self._switch(r, False, tick, Source.app, member.person_id, "forgot_cleanup",
                                  member.person_id, SLEEP)
 
     def _presence(self, i: int, m: int, tick: int) -> None:
@@ -174,6 +174,10 @@ class _Run:
 
     def _occupied(self, r: int, m: int, skip: int | None = None) -> bool:
         return any(j != skip and self.rooms[j][m] == r for j in range(len(self.members)))
+
+    def _awake_occupied(self, r: int, m: int, skip: int) -> bool:
+        return any(j != skip and self.acts[j][m] != SLEEP_CODE and self.rooms[j][m] == r
+                   for j in range(len(self.members)))
 
     def _act(self, i: int, m: int) -> str:
         return self.act_names[self.acts[i][m]]
