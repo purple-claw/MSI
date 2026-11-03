@@ -25,6 +25,7 @@ from gaia.world.cities import CITIES
 from gaia.world.sun import outdoor_lux, sun_altitude_deg
 
 MS_PER_MIN = 60_000
+MIN_WASTE_MS = MS_PER_MIN  # shorter waste intervals are not emitted as ground truth
 CONTEXT_EVERY_MIN = 15
 SLEEP_CODE = 0  # fill_grid is seeded with SLEEP -> 0
 _SLOT_NAMES = {"own_bedroom": "bedroom", "own_bathroom": "bathroom"}
@@ -123,11 +124,16 @@ class _Run:
                 self._presence(i, m, tick)
 
     def finish(self) -> None:
-        """Close the run: intervals still open at the end have no end timestamp."""
+        """Close the run: intervals still open at the end have no end timestamp.
+
+        Waste shorter than MIN_WASTE_MS is dropped here; its events and causes are kept.
+        """
         self.events.sort(key=lambda e: (e.ts_utc, e.event_id))
         for r, (pid, start) in self.open_waste.items():
             self.gt_waste.append(GtWaste(self.mains[r].load_id, pid, start, None))
         self.open_waste.clear()
+        self.gt_waste = [w for w in self.gt_waste
+                         if w.end_ts_utc is None or w.end_ts_utc - w.start_ts_utc >= MIN_WASTE_MS]
 
     # --- per-tick rules -------------------------------------------------------
 
@@ -135,6 +141,8 @@ class _Run:
         prev, cur = self.rooms[i][m - 1], self.rooms[i][m]
         if prev == cur or prev < 0 or not self.light_on[prev] or self._awake_occupied(prev, m, skip=i):
             return
+        if any(self._leaves_awake(j, m, prev) for j in range(i + 1, len(self.members))):
+            return  # a later awake leaver in the same tick decides the exit
         member = self.members[i]
         if forgets(member.persona, self.rng):
             self.open_waste.setdefault(prev, (member.person_id, tick))
@@ -180,6 +188,11 @@ class _Run:
             self._switch(r, True, tick, source, member.person_id, "need_light", member.person_id, name)
 
     # --- helpers --------------------------------------------------------------
+
+    def _leaves_awake(self, j: int, m: int, room: int) -> bool:
+        """Member j is awake and leaves `room` at minute m (it was there at m-1)."""
+        return (self.rooms[j][m - 1] == room and self.rooms[j][m] != room
+                and self.acts[j][m] != SLEEP_CODE)
 
     def _occupied(self, r: int, m: int, skip: int | None = None) -> bool:
         return any(j != skip and self.rooms[j][m] == r for j in range(len(self.members)))

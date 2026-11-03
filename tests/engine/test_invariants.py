@@ -115,3 +115,11 @@ def test_per_load_states_alternate_and_follow_commands(archetype, seed):
         assert states[0].value == 1.0  # lights start off, so the first state is on
         assert all(a.value != b.value for a, b in zip(states, states[1:]))
         assert all(s.ts_utc > cmd_ts[s.ref_id] for s in states)
+
+
+@pytest.mark.parametrize("archetype", ARCHETYPES)
+@settings(max_examples=25, deadline=None)
+@given(seed=SEEDS)
+def test_emitted_waste_is_at_least_a_minute(archetype, seed):
+    for w in _run(seed, archetype).gt_waste:
+        assert w.end_ts_utc is None or w.end_ts_utc - w.start_ts_utc >= 60_000, w

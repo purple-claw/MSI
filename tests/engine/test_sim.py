@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 
 from gaia.engine.sim import HomeSpec, _Run, simulate_home
@@ -75,3 +76,33 @@ def test_bedroom_light_and_sleep_causes_over_a_month():
             sleep_causes += sum(1 for c in r.gt_cause if c.cause == "sleep")
     assert bedroom_on > 0
     assert sleep_causes > 0
+
+
+def test_only_the_last_awake_leaver_decides_the_exit():
+    # A and B are both awake in bedroom_1 with the light on and both leave for living at minute 50.
+    # A never forgets, B always forgets. B is last in household order, so B alone decides: a
+    # forgotten exit that A never sees, and no leave_room switch-off attributed to A.
+    spec = HomeSpec(home_id="h1", home_seed=3, city="hyderabad", archetype="apartment_2bhk",
+                    start_date=date(2026, 11, 2), days=1, festivals=frozenset())
+    manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
+    household = make_household(manifest, APARTMENTS[spec.archetype], rng_for(spec.home_seed, "household"))
+    a, b = household.members[0], household.members[1]
+    a = replace(a, persona=replace(a.persona, forgetfulness=0.0))
+    b = replace(b, persona=replace(b.persona, forgetfulness=1.0))
+    assert a.bedroom == b.bedroom == "bedroom_1"
+    index = {r.room_id: i for i, r in enumerate(manifest.rooms)}
+    bed, living = index["h1:bedroom_1"], index["h1:living"]
+    total = 120
+    act_names = ["sleep", "tv", "living"]
+    rooms = [[bed] * 50 + [living] * (total - 50)] * 2
+    acts = [[1] * 50 + [2] * (total - 50)] * 2
+    run = _Run(spec, manifest, Household(members=(a, b)),
+               local_midnight_utc_ms(spec.start_date, 330), rooms, acts, act_names)
+    run.run(total)
+    run.finish()
+
+    exit_ts = local_midnight_utc_ms(spec.start_date, 330) + 50 * 60_000
+    load = manifest.main_light("h1:bedroom_1").load_id
+    assert not any(c.cause == "leave_room" and c.person_id == a.person_id for c in run.gt_cause)
+    assert [(w.person_id, w.start_ts_utc) for w in run.gt_waste if w.load_id == load] == [
+        (b.person_id, exit_ts)]
