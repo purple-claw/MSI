@@ -188,19 +188,20 @@ A library of time-bounded modifiers on the plan generator. Some examples:
 | `room_id` / `room_type` | string / enum | room type is abstract (`bedroom`, `living`, `kitchen`, `puja`, …) |
 | `load_id` / `load_class` | string / enum | from the load-class registry |
 | `capability` | enum | `power`, `level`, `cct`, `position`, `setpoint`, `mode`, `fan_speed`, … |
-| `value`, `prev_value` | float / string | normalised (0–1 for levels, °C for setpoint) |
+| `value`, `prev_value` | string | normalised (0–1 for levels, °C for setpoint). Stored as strings: floats via Python `repr(float)`, e.g. `"1.0"` |
 | `source` | enum | `wall`, `app`, `voice`, `homekit`, `scene`, `schedule`, `msi`, `system`, `unknown` |
 | `actor` | string | user id or role if known, else `unknown` |
 | `protocol` | enum | `knx`, `matter`, `zigbee`, `wifi`, `other`. Never used as a model feature by default. |
 | `ref_id` | string | links an echo to its command, a scene member to its scene, feedback to a proposal |
-| `domain` | enum | `synthetic` / `real` (for audit) |
+| `domain` | enum | `synthetic` / `real` / `public` (for audit) |
 
 The context stream (per home, per minute): outdoor temperature and humidity, outdoor lux, sun altitude, weather, grid up or down,
 tariff band, plus any real sensors present.
 
 ### 4.2 Ground-truth tables (synthetic only, never available on the board)
-- `gt_cause` per event: cause (`need`, `routine:<id>`, `scene`, `schedule`, `forgot`, `accident`, `guest`, `help_staff`, `msi`, `protocol_noise`), person, activity.
-- `gt_presence`: person × room × interval.
+- `gt_cause` per event: cause, person, activity. G1 causes are `need_light`, `leave_room`, `sleep` and `forgot_cleanup`; the others (`need`, `routine:<id>`, `scene`, `schedule`, `forgot`, `accident`, `guest`, `help_staff`, `msi`, `protocol_noise`) arrive in G2.
+- `gt_waste`: `load_id`, `person_id`, `start_ts_utc`, `end_ts_utc` (null if open at the end of the run). A main light is on while no awake member is in its room. Intervals shorter than 60 s are not emitted.
+- `gt_presence`: `person_id`, `room_id` (null = away), `start_ts_utc`, `end_ts_utc`, `asleep`. Maximal runs of constant room and sleep state per person, tiling the whole run.
 - `gt_routines`: each person's latent routines (the answer key for routine discovery).
 - `gt_drift`: life-event intervals.
 - `gt_energy`: per-load energy estimates.
@@ -251,7 +252,7 @@ Real data is precious but thin, so GAIA grows it:
 | time to next event (when) | events |
 | routine discovery | `gt_routines` |
 | intent and cause classification | `gt_cause` |
-| forgotten or wasted load detection | `gt_cause=forgot`, `gt_energy` |
+| forgotten or wasted load detection | `gt_waste` |
 | drift detection | `gt_drift` |
 | proposal acceptance | MSI response layer |
 | cold start (first 1/3/7/14 days) | time split |
