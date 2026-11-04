@@ -16,7 +16,9 @@ bengaluru = City("bengaluru", 12.9716, 77.5946)
 chennai = City("chennai", 13.0827, 80.2707)
 mumbai = City("mumbai", 19.0760, 72.8777)
 delhi = City("delhi", 28.6139, 77.2090)
+kolkata = City("kolkata", 22.5726, 88.3639)
+pune = City("pune", 18.5204, 73.8567)
 
 CITIES: dict[str, City] = {
-    c.name: c for c in (hyderabad, bengaluru, chennai, mumbai, delhi)
+    c.name: c for c in (hyderabad, bengaluru, chennai, mumbai, delhi, kolkata, pune)
 }

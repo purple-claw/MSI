@@ -1,8 +1,8 @@
-from gaia.world.cities import CITIES, City, bengaluru, chennai, delhi, hyderabad, mumbai
+from gaia.world.cities import CITIES, City, bengaluru, chennai, delhi, hyderabad, kolkata, mumbai, pune
 
 
 def test_presets_present():
-    assert set(CITIES) == {"hyderabad", "bengaluru", "chennai", "mumbai", "delhi"}
+    assert set(CITIES) == {"hyderabad", "bengaluru", "chennai", "mumbai", "delhi", "kolkata", "pune"}
 
 
 def test_preset_coordinates():
@@ -11,6 +11,8 @@ def test_preset_coordinates():
     assert chennai == City("chennai", 13.0827, 80.2707)
     assert mumbai == City("mumbai", 19.0760, 72.8777)
     assert delhi == City("delhi", 28.6139, 77.2090)
+    assert kolkata == City("kolkata", 22.5726, 88.3639)
+    assert pune == City("pune", 18.5204, 73.8567)
 
 
 def test_default_tz_is_ist():
