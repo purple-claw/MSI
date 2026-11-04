@@ -106,3 +106,21 @@ def test_only_the_last_awake_leaver_decides_the_exit():
     assert not any(c.cause == "leave_room" and c.person_id == a.person_id for c in run.gt_cause)
     assert [(w.person_id, w.start_ts_utc) for w in run.gt_waste if w.load_id == load] == [
         (b.person_id, exit_ts)]
+
+
+def test_protocol_latency_does_not_shift_interaction_draws(monkeypatch):
+    import gaia.engine.sim as sim_mod
+
+    spec = HomeSpec(home_id="h1", home_seed=21, city="hyderabad", archetype="apartment_2bhk",
+                    start_date=date(2026, 11, 2), days=3, festivals=frozenset())
+
+    def command_tuples(result):
+        # In switch order (gt_cause), so command timestamps, which depend on latency, do not matter.
+        by_id = {e.event_id: e for e in result.events if e.kind == EventKind.command}
+        return [(by_id[c.event_id].load_id, by_id[c.event_id].source, by_id[c.event_id].value)
+                for c in result.gt_cause]
+
+    real = command_tuples(simulate_home(spec))
+    monkeypatch.setattr(sim_mod, "latency_ms", lambda protocol, rng: 100)
+    stubbed = command_tuples(simulate_home(spec))
+    assert real and stubbed == real

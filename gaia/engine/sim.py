@@ -3,7 +3,8 @@
 Light model: only each room's main light. Each tick, a present person turns on a dark
 room's light when light is needed. Leaving a room, sleeping in it, or an empty-house
 sweep turns lights off. A forgetful exit leaves the light on and records a GtWaste.
-Randomness: "home", "household", "plan/<person>/<day>" and one "engine" stream.
+Randomness: "home", "household", "plan/<person>/<day>", and per home the streams "interaction"
+(sources, forgets), "protocol" (latency) and "engine" (command jitter, cleanup).
 """
 
 from dataclasses import dataclass
@@ -96,7 +97,9 @@ class _Run:
         self.rooms = rooms
         self.acts = acts
         self.act_names = act_names
-        self.rng = rng_for(spec.home_seed, "engine")
+        self.rng_interaction = rng_for(spec.home_seed, "interaction")  # sources and forgets
+        self.rng_protocol = rng_for(spec.home_seed, "protocol")  # command-to-state latency
+        self.rng = rng_for(spec.home_seed, "engine")  # command jitter and cleanup draws
         self.mains: list[Load | None] = [manifest.main_light(r.room_id) for r in manifest.rooms]
         self.light_on = [False] * len(manifest.rooms)
         self.last_state_ts = [-1] * len(manifest.rooms)  # per main-light load, for ordering
@@ -144,10 +147,10 @@ class _Run:
         if any(self._leaves_awake(j, m, prev) for j in range(i + 1, len(self.members))):
             return  # a later awake leaver in the same tick decides the exit
         member = self.members[i]
-        if forgets(member.persona, self.rng):
+        if forgets(member.persona, self.rng_interaction):
             self.open_waste.setdefault(prev, (member.person_id, tick))
             return
-        source = choose_source(member.persona, self.rng)
+        source = choose_source(member.persona, self.rng_interaction)
         self._switch(prev, False, tick, source, member.person_id, "leave_room", member.person_id,
                      self._act(i, m))
 
@@ -159,7 +162,7 @@ class _Run:
         awake_others = [j for j in range(len(self.members))
                         if j != i and self.acts[j][m] != SLEEP_CODE]
         if bed >= 0 and self.light_on[bed] and not any(self.rooms[j][m] == bed for j in awake_others):
-            source = choose_source(member.persona, self.rng)
+            source = choose_source(member.persona, self.rng_interaction)
             self._switch(bed, False, tick, source, member.person_id, "sleep", member.person_id, SLEEP)
         if awake_others:
             return
@@ -184,7 +187,7 @@ class _Run:
         indoor = indoor_lux(outdoor_lux(self._altitude(tick)), self.manifest.rooms[r])
         member = self.members[i]
         if light_needed(indoor, member.persona, name):
-            source = choose_source(member.persona, self.rng)
+            source = choose_source(member.persona, self.rng_interaction)
             self._switch(r, True, tick, source, member.person_id, "need_light", member.person_id, name)
 
     # --- helpers --------------------------------------------------------------
@@ -225,7 +228,7 @@ class _Run:
         cmd_id = self._next_id()
         self._emit(cmd_ts, EventKind.command, r, new, old, source, actor, None, cmd_id)
         self.gt_cause.append(GtCause(cmd_id, cause, person_id, activity))
-        state_ts = max(cmd_ts + latency_ms(load.protocol, self.rng), self.last_state_ts[r] + 1)
+        state_ts = max(cmd_ts + latency_ms(load.protocol, self.rng_protocol), self.last_state_ts[r] + 1)
         self.last_state_ts[r] = state_ts
         self._emit(state_ts, EventKind.state, r, new, old, source, actor, cmd_id, self._next_id())
         self.light_on[r] = on
