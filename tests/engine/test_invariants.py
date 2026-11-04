@@ -7,6 +7,7 @@ from hypothesis import strategies as st
 
 from gaia.engine.sim import SLEEP_CODE, HomeSpec, _build_grids, _Run, simulate_home
 from gaia.engine.timeline import MINUTES_PER_DAY
+from gaia.registry.registry import get_load_class
 from gaia.schema.events import EventKind
 from gaia.world.calendar import local_midnight_utc_ms
 
@@ -92,6 +93,8 @@ def test_waste_never_overlaps_awake_occupancy(archetype, seed):
     room_index = {room.room_id: i for i, room in enumerate(r.manifest.rooms)}
     room_of_load = {ld.load_id: room_index[ld.room_id] for ld in r.manifest.loads}
     for w in r.gt_waste:
+        if get_load_class(w.load_class).waste_rule != "unattended":
+            continue  # overrun waste (e.g. fan.exhaust) ignores occupancy by design, see gaia/engine/waste.py
         idx = room_of_load[w.load_id]
         lo = (w.start_ts_utc - start) // 60_000
         # ceil: an interval ending mid-minute still counts that minute as covered

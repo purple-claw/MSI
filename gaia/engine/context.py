@@ -178,7 +178,17 @@ class TickContext:
         return tuple(p for p in self.people if p.room_id == room_id and not p.asleep)
 
     def any_awake_in(self, room_id: str) -> bool:
-        return any(p.room_id == room_id and not p.asleep for p in self.people)
+        for p in self.people:  # a plain loop: this runs every minute for every open waste interval
+            if p.room_id == room_id and not p.asleep:
+                return True
+        return False
+
+    def any_in(self, room_id: str) -> bool:
+        """True when someone, awake or asleep, is in the room."""
+        for p in self.people:
+            if p.room_id == room_id:
+                return True
+        return False
 
     def entered(self) -> list[tuple[PersonNow, str]]:
         if not self.changed:

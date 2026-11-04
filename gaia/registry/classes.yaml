@@ -4,7 +4,8 @@
 #   domain, matter_device_type (null if no Matter device type), capabilities,
 #   power_w (state -> watts; keys on | standby | active), power_source
 #   (URL, or the literal `assumption`), waste_rule (unattended | overrun:<min> | none),
-#   rooms.
+#   rooms, sleeper_counts_as_attended (optional, default false: a sleeping occupant counts as
+#   attending the load for the waste rule).
 # Capability kinds: binary (implicit 0/1), level/position/tilt/hue/saturation (0-1),
 #   kelvin/celsius/count (explicit lo/hi), enum (values), event.
 # Where the research gives a range, the value is the midpoint and the range is in a comment.
@@ -228,6 +229,7 @@ climate.split_ac:
   power_w: {"on": 1315}
   power_source: https://ankurelectricals.com/products/bluestar-1-5-ton-5-star-inverter-split-air-conditioner
   waste_rule: unattended
+  sleeper_counts_as_attended: true
   rooms: [bedroom, living, dining, study]
 
 climate.vrf_indoor:
@@ -241,6 +243,7 @@ climate.vrf_indoor:
   power_w: {"on": 60}
   power_source: assumption
   waste_rule: unattended
+  sleeper_counts_as_attended: true
   rooms: [bedroom, living]
 
 climate.cassette_ac:
@@ -254,6 +257,7 @@ climate.cassette_ac:
   power_w: {"on": 1500}
   power_source: assumption
   waste_rule: unattended
+  sleeper_counts_as_attended: true
   rooms: [living, dining]
 
 fan.bldc_ceiling:
@@ -266,6 +270,7 @@ fan.bldc_ceiling:
   power_w: {"on": 30}
   power_source: https://www.bajajelectricals.com/blogs/fans/bldc-fan-motor-star-rating-explained
   waste_rule: unattended
+  sleeper_counts_as_attended: true
   rooms: [bedroom, living, dining, kitchen]
 
 fan.ceiling:
@@ -278,6 +283,7 @@ fan.ceiling:
   power_w: {"on": 65}
   power_source: assumption
   waste_rule: unattended
+  sleeper_counts_as_attended: true
   rooms: [bedroom, living, dining, kitchen]
 
 fan.exhaust:

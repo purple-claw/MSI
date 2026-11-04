@@ -2,6 +2,8 @@
 
 The rule comes from the load-class registry:
 - ``unattended``: on while no awake member is in its room. It opens at the first such minute.
+  A class with ``sleeper_counts_as_attended`` (climate and ceiling fans) also counts a sleeping
+  member as attending, so a bedroom AC running overnight is not waste.
 - ``overrun:N``: on for more than N minutes. It opens N minutes after the on state and closes
   at the off state. Occupancy does not matter, and nobody is recorded as having left it, so
   its person is None.
@@ -54,6 +56,9 @@ def parse_rule(rule: str) -> tuple[str, int]:
 class WasteTracker:
     def __init__(self, manifest: HomeManifest) -> None:
         self._loads = {ld.load_id: ld for ld in manifest.loads}
+        self._sleepers_attend = {
+            ld.load_id: get_load_class(ld.load_class).sleeper_counts_as_attended for ld in manifest.loads
+        }
         self._rules = {
             ld.load_id: ("none", 0) if ld.circuit == NIGHT_CIRCUIT
             else parse_rule(get_load_class(ld.load_class).waste_rule)
@@ -89,7 +94,7 @@ class WasteTracker:
             load = self._loads[load_id]
             kind, minutes = self._rules[load_id]
             if kind == "unattended":
-                if not ctx.any_awake_in(load.room_id):
+                if not self._attended(ctx, load_id):
                     self._open_at(load_id, ctx.tick_ms, self._last_leaver.get(load.room_id))
             elif kind == "overrun":
                 due = on_ts + minutes * MS_PER_MIN
@@ -113,12 +118,18 @@ class WasteTracker:
         load = self._loads[load_id]
         kind, _ = self._rules[load_id]
         off = self._off_at.get(load_id)
-        end = ctx.tick_ms if kind == "unattended" and ctx.any_awake_in(load.room_id) else None
+        end = ctx.tick_ms if kind == "unattended" and self._attended(ctx, load_id) else None
         if off is not None and (end is not None or off <= ctx.tick_ms):
             end = off if end is None else min(end, off)
         if end is not None:
             self._off_at.pop(load_id, None)
             self._close(load_id, end)
+
+    def _attended(self, ctx, load_id: str) -> bool:
+        room_id = self._loads[load_id].room_id
+        if self._sleepers_attend[load_id]:
+            return ctx.any_in(room_id)
+        return ctx.any_awake_in(room_id)
 
     def _open_at(self, load_id: str, start_ms: int, person_id: str | None) -> None:
         self._open[load_id] = (person_id, start_ms)

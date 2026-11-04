@@ -51,6 +51,7 @@ class LoadClass:
     waste_rule: str
     is_sensor: bool
     rooms: tuple[str, ...]
+    sleeper_counts_as_attended: bool = False
 
 
 class _StrictLoader(yaml.SafeLoader):
@@ -121,6 +122,7 @@ class _LoadClassSpec(BaseModel):
     power_source: str
     waste_rule: str
     rooms: tuple[str, ...]
+    sleeper_counts_as_attended: bool = False
 
     @model_validator(mode="after")
     def _check_fields(self):
@@ -160,6 +162,7 @@ def _build(name: str, spec: _LoadClassSpec) -> LoadClass:
         waste_rule=spec.waste_rule,
         is_sensor=spec.domain == SENSOR_DOMAIN,
         rooms=spec.rooms,
+        sleeper_counts_as_attended=spec.sleeper_counts_as_attended,
     )
 
 

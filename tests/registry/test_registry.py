@@ -198,3 +198,10 @@ def test_malformed_registry_raises_naming_class(text, must_name):
 def test_duplicate_class_key_is_named():
     with pytest.raises(ValueError, match="duplicate key 'light.onoff'"):
         load_registry(MINIMAL + MINIMAL)
+
+
+def test_sleeper_flag_is_on_for_climate_and_ceiling_fans_only():
+    from gaia.registry.registry import REGISTRY
+    flagged = {name for name, lc in REGISTRY.items() if lc.sleeper_counts_as_attended}
+    assert flagged == {"climate.split_ac", "climate.vrf_indoor", "climate.cassette_ac",
+                       "fan.bldc_ceiling", "fan.ceiling"}

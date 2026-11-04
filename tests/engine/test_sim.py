@@ -173,8 +173,10 @@ def test_policy_stream_isolation():
     lights = {ld.load_id for ld in base.manifest.loads if ld.is_main_light}
     assert any(e.load_id not in lights for e in probed.events)  # the probe really emitted
     assert [e for e in probed.events if e.load_id in lights] == [e for e in base.events if e.load_id in lights]
-    assert [lb for lb in probed.labels if lb.source_ref == "lighting"] == base.labels
-    assert [w for w in probed.gt_waste if w.load_id in lights] == base.gt_waste
+    assert [lb for lb in probed.labels if lb.source_ref == "lighting"] == [
+        lb for lb in base.labels if lb.source_ref == "lighting"]
+    assert [w for w in probed.gt_waste if w.load_id in lights] == [
+        w for w in base.gt_waste if w.load_id in lights]
 
 
 def test_policy_names_must_be_unique():

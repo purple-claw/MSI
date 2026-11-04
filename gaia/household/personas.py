@@ -27,6 +27,10 @@ class Persona:
     cct_pref_offset_k: float = 0.0  # added to the circadian CCT, within +-500 K
     daylight_off_p: float = 0.6  # chance an awake occupant switches the main light off in daylight
     dim_pref: float = 1.0  # multiplier on full-brightness levels, within 0.8-1.0
+    # Climate preferences (assumption: defaults until calibrated from ETS).
+    ac_affinity: float = 0.7  # chance of using the AC, scaled by the heat index
+    ac_setpoint: float = 24.0  # C, the BEE default; the policy sets it when the AC goes on
+    fan_affinity: float = 0.8  # chance of switching a room's ceiling fan on when occupied in the heat
 
     def __post_init__(self) -> None:
         if not -500.0 <= self.cct_pref_offset_k <= 500.0:
@@ -35,6 +39,12 @@ class Persona:
             raise ValueError(f"daylight_off_p out of [0, 1]: {self.daylight_off_p!r}")
         if not 0.8 <= self.dim_pref <= 1.0:
             raise ValueError(f"dim_pref out of [0.8, 1.0]: {self.dim_pref!r}")
+        if not 0.0 <= self.ac_affinity <= 1.0:
+            raise ValueError(f"ac_affinity out of [0, 1]: {self.ac_affinity!r}")
+        if not 20.0 <= self.ac_setpoint <= 27.0:
+            raise ValueError(f"ac_setpoint out of [20, 27]: {self.ac_setpoint!r}")
+        if not 0.0 <= self.fan_affinity <= 1.0:
+            raise ValueError(f"fan_affinity out of [0, 1]: {self.fan_affinity!r}")
 
 
 PERSONAS: dict[str, Persona] = {

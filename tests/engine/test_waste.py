@@ -14,10 +14,14 @@ class _Ctx:
     """Stand-in for TickContext: the tracker only reads tick_ms, awake_in and left."""
     tick_ms: int
     awake_rooms: tuple = ()
+    asleep_rooms: tuple = ()
     leavers: tuple = ()  # (person_id, room_id)
 
     def any_awake_in(self, room_id):
         return room_id in self.awake_rooms
+
+    def any_in(self, room_id):
+        return room_id in self.awake_rooms or room_id in self.asleep_rooms
 
     def left(self):
         return [(SimpleNamespace(person_id=p), r) for p, r in self.leavers]
@@ -140,3 +144,43 @@ def test_night_circuit_load_is_never_waste():
     w.on_tick(_Ctx(tick_ms=T0))
     w.on_tick(_Ctx(tick_ms=T0 + 10 * MIN))
     assert w.finish() == []
+
+
+def _sleeper_manifest() -> HomeManifest:
+    return HomeManifest(
+        home_id="h1", archetype="test", city="pune",
+        tier="basic", lighting_system="matter_wifi",
+        rooms=(Room("r1", "bedroom", 0.02),),
+        adjacency={"r1": ()},
+        loads=(
+            Load("l_ac", "r1", "climate.split_ac", Protocol.knx, "knx_dali", "none"),
+            Load("l_main", "r1", "light.onoff", Protocol.knx, "knx_dali", "main", "bulb"),
+        ),
+    )
+
+
+def test_sleeping_occupant_counts_as_attended_for_climate():
+    tracker = WasteTracker(_sleeper_manifest())
+    tracker.on_state("l_ac", T0, True)
+    tracker.on_tick(_Ctx(T0, asleep_rooms=("r1",)))
+    tracker.on_tick(_Ctx(T0 + 10 * MIN, asleep_rooms=("r1",)))
+    assert tracker.finish() == []
+
+
+def test_sleeping_occupant_does_not_count_as_attended_for_lights():
+    tracker = WasteTracker(_sleeper_manifest())
+    tracker.on_state("l_main", T0, True)
+    tracker.on_tick(_Ctx(T0, asleep_rooms=("r1",)))
+    tracker.on_tick(_Ctx(T0 + 10 * MIN, asleep_rooms=("r1",)))
+    (w,) = tracker.finish()
+    assert (w.load_id, w.start_ts_utc) == ("l_main", T0)
+
+
+def test_climate_waste_still_opens_when_nobody_is_in_the_room():
+    tracker = WasteTracker(_sleeper_manifest())
+    tracker.on_state("l_ac", T0, True)
+    tracker.on_tick(_Ctx(T0, leavers=(("p1", "r1"),)))
+    tracker.on_tick(_Ctx(T0 + 2 * MIN))
+    (w,) = tracker.finish()
+    assert (w.load_id, w.person_id) == ("l_ac", "p1")
+    assert w.start_ts_utc == T0
