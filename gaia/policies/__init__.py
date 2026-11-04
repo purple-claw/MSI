@@ -3,8 +3,9 @@
 from gaia.policies.base import Policy
 from gaia.policies.climate import Climate
 from gaia.policies.lighting import Lighting
+from gaia.policies.media import Media
 from gaia.policies.shading import Shading
 
-POLICY_ORDER: list[type[Policy]] = [Lighting, Climate, Shading]
+POLICY_ORDER: list[type[Policy]] = [Lighting, Climate, Shading, Media]
 
-__all__ = ["POLICY_ORDER", "Climate", "Lighting", "Policy", "Shading"]
+__all__ = ["POLICY_ORDER", "Climate", "Lighting", "Media", "Policy", "Shading"]

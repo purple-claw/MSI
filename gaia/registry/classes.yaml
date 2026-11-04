@@ -127,9 +127,10 @@ media.stb_dth:
     - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
     - {name: playback, kind: enum, values: [playing, paused, stopped]}
   # Tata Sky guide: 18 W in use, 17 W standby (Tier C, not measured).
+  # waste_rule none: at TV-off the box goes to standby (power 0), which is counted through standby.
   power_w: {"on": 18, standby: 17}
   power_source: https://www.downtoearth.org.in/amp/story/environment/confusing-signal-38433
-  waste_rule: unattended
+  waste_rule: none
   rooms: [living, bedroom]
 
 media.streamer:
@@ -187,7 +188,7 @@ media.av_receiver:
     - {name: mute, kind: binary}
   power_w: {"on": 120, standby: 0.5}
   power_source: assumption
-  waste_rule: unattended
+  waste_rule: none
   rooms: [living]
 
 media.projector:
@@ -199,7 +200,7 @@ media.projector:
     - {name: playback, kind: enum, values: [playing, paused, stopped]}
   power_w: {"on": 280, standby: 0.5}
   power_source: assumption
-  waste_rule: unattended
+  waste_rule: none
   rooms: [living]
 
 media.screen_motorised:

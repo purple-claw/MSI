@@ -31,6 +31,10 @@ class Persona:
     ac_affinity: float = 0.7  # chance of using the AC, scaled by the heat index
     ac_setpoint: float = 24.0  # C, the BEE default; the policy sets it when the AC goes on
     fan_affinity: float = 0.8  # chance of switching a room's ceiling fan on when occupied in the heat
+    # Media preferences (assumption: defaults until calibrated from ETS).
+    tv_source_pref: float = 0.6  # chance the TV takes the set-top box as its source when the room has one
+    volume_pref: float = 0.35  # volume set on the TV, streamer, speaker and receiver, within 0.2-0.5
+    music_affinity: float = 0.4  # chance of starting music at a cook, dinner, relax or wind_down
 
     def __post_init__(self) -> None:
         if not -500.0 <= self.cct_pref_offset_k <= 500.0:
@@ -45,6 +49,12 @@ class Persona:
             raise ValueError(f"ac_setpoint out of [20, 27]: {self.ac_setpoint!r}")
         if not 0.0 <= self.fan_affinity <= 1.0:
             raise ValueError(f"fan_affinity out of [0, 1]: {self.fan_affinity!r}")
+        if not 0.0 <= self.tv_source_pref <= 1.0:
+            raise ValueError(f"tv_source_pref out of [0, 1]: {self.tv_source_pref!r}")
+        if not 0.2 <= self.volume_pref <= 0.5:
+            raise ValueError(f"volume_pref out of [0.2, 0.5]: {self.volume_pref!r}")
+        if not 0.0 <= self.music_affinity <= 1.0:
+            raise ValueError(f"music_affinity out of [0, 1]: {self.music_affinity!r}")
 
 
 PERSONAS: dict[str, Persona] = {
