@@ -67,8 +67,13 @@ class Shading:
                 elif person.activity == "wind_down":
                     self._draw_room(ctx, rng, person.room_id, person, CLOSED, WIND_DOWN_CLOSE_P,
                                     "privacy", "activity_start", out)
+        if ctx.local_minute_of_day == 0:  # a new day: an evening close from the last one is stale
+            self._close_at = None
+            self._close_pending = False
         if prev_sun is not None:
             if prev_sun < 0 <= sun:
+                self._close_at = None  # a close from last night is stale once the sun is up
+                self._close_pending = False
                 self._sunrise(ctx, rng, out)
             elif prev_sun >= 0 > sun:
                 self._close_at = ctx.minute + int(rng.integers(0, SUNSET_WINDOW_MIN + 1))

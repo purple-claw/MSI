@@ -164,3 +164,30 @@ def test_evening_close_waits_for_the_first_return_home():
     assert closes
     first = min((e.ts_utc - start_ms) // MIN for e in closes)
     assert back <= first <= back + 5
+
+
+def test_evening_close_does_not_carry_over_an_empty_night():
+    # Away from before sunset until after the next sunrise, home from noon: no evening close in daylight.
+    start_ms = local_midnight_utc_ms(START, HYD_TZ)
+    total = 2 * 1440
+    sun = sun_altitude_grid(CITIES["hyderabad"], start_ms, total)
+    rise = next(m for m in range(1440, total) if sun[m - 1] < 0 <= sun[m])
+    back = 1440 + 720  # home at noon on the day after the empty night
+    seed = next(s for s in range(60) if _shade_ids(ARCHETYPES["apartment_4bhk"](
+        "h1", "hyderabad", rng_for(s, "home")), "h1:living"))
+    spec = HomeSpec(home_id="h1", home_seed=seed, city="hyderabad", archetype="apartment_4bhk",
+                    start_date=START, days=2, festivals=frozenset())
+    manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
+    household = make_household(manifest, ARCHETYPE_SPECS[spec.archetype], rng_for(spec.home_seed, "household"))
+    living = next(i for i, r in enumerate(manifest.rooms) if r.room_id == "h1:living")
+    span = 60  # stop before the second sunset, which would close the shades legitimately
+    run = _Run(spec, manifest, Household(members=(household.members[0],)), start_ms,
+               [[-1] * back + [living] * span], [[0] * back + [1] * span], ["sleep", "living"],
+               policy_order=[Shading])
+    shades = _shade_ids(manifest, "h1:living")
+    for lid in shades:
+        run.devices.get(lid).set("position", OPEN)
+    run.run(back + span)
+    run.finish()
+    closes = [e for e in _position_commands(run.events, shades) if e.value == 0.0]
+    assert not [e for e in closes if (e.ts_utc - start_ms) // MIN >= rise]

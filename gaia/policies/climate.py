@@ -247,7 +247,7 @@ class Climate:
                     self._exhaust_off_at[ld.load_id] = (due, forget_p)
                 elif ctx.minute >= timer[0]:
                     del self._exhaust_off_at[ld.load_id]
-                    if rng.random() < timer[1]:
+                    if timer[1] > 0 and rng.random() < timer[1]:
                         self._exhaust_forgotten[ld.load_id] = None  # left on, so it is waste
                     else:
                         self._emit(ld, "power", 0.0, None, "none", "air_quality", "timer", "turn_off", out)

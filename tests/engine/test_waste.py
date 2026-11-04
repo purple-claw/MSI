@@ -230,3 +230,16 @@ def test_climate_waste_still_opens_when_nobody_is_in_the_room():
     (w,) = tracker.finish()
     assert (w.load_id, w.person_id) == ("l_ac", "p1")
     assert w.start_ts_utc == T0
+
+
+def test_grace_is_measured_from_the_last_arrival_after_a_second_leave():
+    tracker = WasteTracker(_manifest())
+    tracker.on_state("l_fan", T0, True)
+    tracker.on_tick(_Ctx(T0 + MIN, awake_rooms=("r1",)))
+    tracker.on_tick(_Ctx(T0 + 10 * MIN, leavers=(("p1", "r1"),)))
+    tracker.on_tick(_Ctx(T0 + 12 * MIN, awake_rooms=("r1",)))  # re-entry: last attended moves to 12
+    tracker.on_tick(_Ctx(T0 + 20 * MIN, leavers=(("p2", "r1"),)))  # second leave
+    tracker.on_tick(_Ctx(T0 + 30 * MIN))  # 18 minutes after the last attendance: waste from 12 + 15 = 27
+    tracker.on_state("l_fan", T0 + 40 * MIN, False)
+    (w,) = tracker.finish()
+    assert (w.person_id, w.start_ts_utc, w.end_ts_utc) == ("p2", T0 + 27 * MIN, T0 + 40 * MIN)

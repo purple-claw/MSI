@@ -81,7 +81,8 @@ class WasteTracker:
             if pending is not None:
                 self._close(load_id, pending)  # off from ``pending`` until this on
             self._on.setdefault(load_id, ts_ms)
-            self._last_attended.setdefault(load_id, ts_ms)
+            if self._rules[load_id][1]:  # only grace rules keep a last-attended tick
+                self._last_attended.setdefault(load_id, ts_ms)
         else:
             self._on.pop(load_id, None)
             self._last_attended.pop(load_id, None)
@@ -95,19 +96,17 @@ class WasteTracker:
         for load_id in tuple(self._open):
             self._settle(ctx, load_id)
         for load_id, on_ts in self._on.items():  # _on is not changed inside this loop
-            load = self._loads[load_id]
             kind, minutes = self._rules[load_id]
-            if kind == "unattended":
+            if kind == "unattended" and minutes == 0:  # plain: open once, settled by _settle
+                if load_id not in self._open and not self._attended(ctx, load_id):
+                    self._open_at(load_id, ctx.tick_ms, self._last_leaver.get(self._loads[load_id].room_id))
+            elif kind == "unattended":  # grace: the gap counts from the last attended tick
                 if self._attended(ctx, load_id):
                     self._last_attended[load_id] = ctx.tick_ms
                 elif load_id not in self._open:
-                    leaver = self._last_leaver.get(load.room_id)
-                    if minutes == 0:
-                        self._open_at(load_id, ctx.tick_ms, leaver)
-                    else:  # grace: the gap counts from the last attended tick
-                        due = self._last_attended.get(load_id, on_ts) + minutes * MS_PER_MIN
-                        if ctx.tick_ms >= due:
-                            self._open_at(load_id, due, leaver)
+                    due = self._last_attended.get(load_id, on_ts) + minutes * MS_PER_MIN
+                    if ctx.tick_ms >= due:
+                        self._open_at(load_id, due, self._last_leaver.get(self._loads[load_id].room_id))
             elif kind == "overrun" and load_id not in self._open:
                 due = on_ts + minutes * MS_PER_MIN
                 if ctx.tick_ms >= due:
@@ -127,7 +126,6 @@ class WasteTracker:
     def _settle(self, ctx, load_id: str) -> None:
         """Close an open interval at the earlier of: its pending off ts (once reached), and the
         tick of an awake arrival into the room (unattended loads only)."""
-        load = self._loads[load_id]
         kind, _ = self._rules[load_id]
         off = self._off_at.get(load_id)
         end = ctx.tick_ms if kind == "unattended" and self._attended(ctx, load_id) else None
