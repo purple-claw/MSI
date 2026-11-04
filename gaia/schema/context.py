@@ -28,3 +28,13 @@ GT_WASTE_ARROW_SCHEMA = pa.schema(
         pa.field("end_ts_utc", pa.int64(), nullable=True),
     ]
 )
+
+GT_PRESENCE_ARROW_SCHEMA = pa.schema(
+    [
+        pa.field("person_id", pa.string(), nullable=False),
+        pa.field("room_id", pa.string(), nullable=True),
+        pa.field("start_ts_utc", pa.int64(), nullable=False),
+        pa.field("end_ts_utc", pa.int64(), nullable=False),
+        pa.field("asleep", pa.bool_(), nullable=False),
+    ]
+)

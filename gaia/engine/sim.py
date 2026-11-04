@@ -10,6 +10,7 @@ Randomness: "home", "household", "plan/<person>/<day>", and per home the streams
 from dataclasses import dataclass
 from datetime import date, timedelta
 from functools import partial
+from itertools import groupby
 
 from gaia.behaviour.day_plan import plan_day
 from gaia.behaviour.needs import indoor_lux, light_needed
@@ -60,6 +61,17 @@ class GtWaste:
 
 
 @dataclass(frozen=True)
+class GtPresence:
+    """A maximal run of constant room (None = away) and sleep state for one person."""
+
+    person_id: str
+    room_id: str | None
+    start_ts_utc: int
+    end_ts_utc: int
+    asleep: bool
+
+
+@dataclass(frozen=True)
 class ContextRow:
     ts_utc: int
     home_id: str
@@ -75,6 +87,8 @@ class SimResult:
     context: list[ContextRow]
     gt_cause: list[GtCause]
     gt_waste: list[GtWaste]
+    gt_presence: list[GtPresence]
+    spec: HomeSpec
 
 
 def _room_of(slot: str | None, member: Member, home_id: str, room_index: dict[str, int]) -> int:
@@ -274,6 +288,27 @@ def _build_grids(spec: HomeSpec) -> tuple[HomeManifest, Household, list[list[int
     return manifest, household, rooms, acts, act_names
 
 
+def _presence_key(room_and_act: tuple[int, int]) -> tuple[int, bool]:
+    room_idx, act_code = room_and_act
+    return room_idx, act_code == SLEEP_CODE
+
+
+def _presence_runs(start_ms: int, manifest: HomeManifest, household: Household,
+                   rooms: list[list[int]], acts: list[list[int]]) -> list[GtPresence]:
+    """Per person, the maximal runs of constant (room, asleep) over the whole grid."""
+    runs: list[GtPresence] = []
+    for i, member in enumerate(household.members):
+        minute = 0
+        for (room_idx, asleep), group in groupby(zip(rooms[i], acts[i]), key=_presence_key):
+            length = sum(1 for _ in group)
+            start = start_ms + minute * MS_PER_MIN
+            room_id = None if room_idx < 0 else manifest.rooms[room_idx].room_id
+            runs.append(GtPresence(member.person_id, room_id, start,
+                                   start + length * MS_PER_MIN, asleep))
+            minute += length
+    return runs
+
+
 def simulate_home(spec: HomeSpec) -> SimResult:
     manifest, household, rooms, acts, act_names = _build_grids(spec)
     start_ms = local_midnight_utc_ms(spec.start_date, CITIES[spec.city].tz_offset_min)
@@ -281,4 +316,6 @@ def simulate_home(spec: HomeSpec) -> SimResult:
     run = _Run(spec, manifest, household, start_ms, rooms, acts, act_names)
     run.run(total)
     run.finish()
-    return SimResult(manifest, household, run.events, run.context, run.gt_cause, run.gt_waste)
+    presence = _presence_runs(start_ms, manifest, household, rooms, acts)
+    return SimResult(manifest, household, run.events, run.context, run.gt_cause, run.gt_waste,
+                     presence, spec)

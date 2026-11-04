@@ -124,3 +124,21 @@ def test_protocol_latency_does_not_shift_interaction_draws(monkeypatch):
     monkeypatch.setattr(sim_mod, "latency_ms", lambda protocol, rng: 100)
     stubbed = command_tuples(simulate_home(spec))
     assert real and stubbed == real
+
+
+def test_presence_runs_tile_the_range_per_person():
+    days = 3
+    spec = HomeSpec(home_id="h1", home_seed=8, city="hyderabad", archetype="apartment_3bhk",
+                    start_date=date(2026, 11, 2), days=days, festivals=frozenset())
+    r = simulate_home(spec)
+    start = local_midnight_utc_ms(spec.start_date, 330)
+    end = start + days * 1440 * 60_000
+    persons = [m.person_id for m in r.household.members]
+    assert sorted({p.person_id for p in r.gt_presence}) == sorted(persons)
+    for pid in persons:
+        runs = sorted((p for p in r.gt_presence if p.person_id == pid), key=lambda p: p.start_ts_utc)
+        assert runs[0].start_ts_utc == start and runs[-1].end_ts_utc == end
+        for a, b in zip(runs, runs[1:]):
+            assert a.end_ts_utc == b.start_ts_utc, (a, b)  # no gaps, no overlaps
+            assert (a.room_id, a.asleep) != (b.room_id, b.asleep), (a, b)  # maximal runs
+        assert all(p.end_ts_utc > p.start_ts_utc for p in runs)

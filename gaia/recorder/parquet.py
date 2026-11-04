@@ -18,6 +18,7 @@ from gaia.engine.sim import SimResult
 from gaia.schema.context import (
     CONTEXT_ARROW_SCHEMA,
     GT_CAUSE_ARROW_SCHEMA,
+    GT_PRESENCE_ARROW_SCHEMA,
     GT_WASTE_ARROW_SCHEMA,
 )
 from gaia.schema.events import events_to_table
@@ -39,6 +40,10 @@ def _manifest_json(result: SimResult, world_version: str) -> str:
         for m in result.household.members
     ]
     payload["world_version"] = world_version
+    payload["home_seed"] = result.spec.home_seed
+    payload["start_date"] = result.spec.start_date.isoformat()
+    payload["days"] = result.spec.days
+    payload["festivals"] = sorted(d.isoformat() for d in result.spec.festivals)
     return json.dumps(payload, sort_keys=True, indent=None, separators=(",", ":"))
 
 
@@ -53,6 +58,9 @@ def _write_files(result: SimResult, directory: Path, world_version: str) -> None
         ),
         "gt_waste.parquet": pa.Table.from_pylist(
             [asdict(w) for w in result.gt_waste], schema=GT_WASTE_ARROW_SCHEMA
+        ),
+        "gt_presence.parquet": pa.Table.from_pylist(
+            [asdict(p) for p in result.gt_presence], schema=GT_PRESENCE_ARROW_SCHEMA
         ),
     }
     for name, table in tables.items():
