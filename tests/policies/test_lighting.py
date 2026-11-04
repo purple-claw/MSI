@@ -26,7 +26,7 @@ class FixedRng:
         return self.value
 
 
-def _setup(archetype, rows, forgetfulness=0.0, daylight_off_p=None, seed=4):
+def _setup(archetype, rows, forgetfulness=0.0, daylight_off_p=None, seed=4, light_threshold=None):
     spec = HomeSpec(home_id="h1", home_seed=seed, city="hyderabad", archetype=archetype,
                     start_date=START, days=1, festivals=frozenset())
     manifest = ARCHETYPES[archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
@@ -35,6 +35,8 @@ def _setup(archetype, rows, forgetfulness=0.0, daylight_off_p=None, seed=4):
     persona = replace(member.persona, forgetfulness=forgetfulness)
     if daylight_off_p is not None:
         persona = replace(persona, daylight_off_p=daylight_off_p)
+    if light_threshold is not None:
+        persona = replace(persona, light_threshold_lux=light_threshold)
     member = replace(member, persona=persona)
     index = {r.room_id: i for i, r in enumerate(manifest.rooms)}
     names = ["sleep"]
@@ -253,20 +255,36 @@ def test_cct_follows_time():
     assert evening and all(v <= 3500 for v in evening)
 
 
+def test_daytime_cct_never_below_4500():
+    # Lights forced on at 08:00 (persona threshold above any daylight), so tunable task lights
+    # in the living room take daytime cct commands.
+    seed = next(s for s in range(200) if any(
+        ld.load_class == "light.tunable" for ld in _setup("independent_house", [], seed=s)[2].loads_in("h1:living")))
+    rows = [(None, "cook")] * 480 + _rows(("living", "cook", 60))
+    run, a, manifest = _setup("independent_house", rows, seed=seed, light_threshold=1e6)
+    run.run(len(rows))
+    run.finish()
+    cct = [e for e in run.events if e.kind == EventKind.command and e.capability == "cct"]
+    assert cct and all(480 <= (e.ts_utc - run.start_ms) // MIN < 540 for e in cct)
+    assert all(e.value >= 4500 for e in cct)
+
+
 def test_no_cct_spam():
+    start = local_midnight_utc_ms(START, TZ)
     for seed in range(3):
         r = _sim("villa", 30, seed)
-        by_load = {}
+        by_load = {}  # load -> (minute of last cct command or None, power cycled since)
         for e in sorted(r.events, key=lambda e: (e.ts_utc, e.event_id)):
             if e.kind != EventKind.command or e.capability not in ("cct", "power"):
                 continue
+            tick = (e.ts_utc - start) // MIN
             last_cct, power_since = by_load.get(e.load_id, (None, False))
             if e.capability == "power":
                 by_load[e.load_id] = (last_cct, True)
                 continue
             if last_cct is not None and not power_since:
-                assert e.ts_utc - last_cct >= 10 * MIN, (e.load_id, last_cct, e.ts_utc)
-            by_load[e.load_id] = (e.ts_utc, False)
+                assert tick - last_cct >= 10, (e.load_id, last_cct, tick)
+            by_load[e.load_id] = (tick, False)
 
 
 def test_daylight_off_happens():
@@ -275,3 +293,76 @@ def test_daylight_off_happens():
         r = _sim("independent_house", 60, seed)
         triggers += sum(1 for lb in r.labels if lb.trigger == "daylight")
     assert triggers > 0
+
+
+def test_night_lights_are_never_waste():
+    night_commands = 0
+    for seed in range(2):
+        r = _sim("independent_house", 30, seed)
+        night = {ld.load_id for ld in r.manifest.loads if ld.circuit == "night"}
+        assert night
+        night_commands += sum(1 for e in r.events if e.kind == EventKind.command and e.load_id in night)
+        assert not [w for w in r.gt_waste if w.load_id in night]
+    assert night_commands > 0
+
+
+class _DayCtx:
+    """A TickContext with the outdoor lux replaced, and the occupancy of the same minute."""
+
+    def __init__(self, base, lux):
+        self._base = base
+        self._lux = lux
+
+    @property
+    def outdoor_lux(self):
+        return self._lux
+
+    def awake_in(self, room_id):
+        return self._base.awake_in(room_id)
+
+
+class _CountingRng:
+    """Counts draws; every draw returns 0.99, so a daylight draw never switches the light off."""
+
+    def __init__(self):
+        self.draws = 0
+
+    def random(self):
+        self.draws += 1
+        return 0.99
+
+
+def _tick_at(run, minute):
+    return TickContext(minute=minute, tick_ms=run.start_ms + minute * MIN, _env=run.home_env)
+
+
+def test_daylight_spell_restarts_after_the_room_goes_unlit():
+    run, a, manifest = _setup("independent_house", _rows(("balcony", "living", 40)))
+    run.run(1)  # dark at midnight: the balcony main goes on with the occupant
+    main = manifest.main_light("h1:balcony")
+    assert run.devices.is_on(main.load_id)
+    policy = run.policies[0]
+    rng = _CountingRng()
+    bright = 100_000.0  # balcony window factor 0.3: indoor lux far above 3x the threshold
+
+    def step(minute, lux=bright):
+        policy._emitted = set()
+        return policy._daylight(_DayCtx(_tick_at(run, minute), lux), rng, [])
+
+    for minute in range(1, 11):
+        step(minute)
+    assert rng.draws == 0  # 10 bright minutes: no spell has reached 15 yet
+
+    out = []
+    policy._emitted = set()
+    policy._power(_tick_at(run, 11), main, False, a.person_id, "living", "energy_saving",
+                  "room_exit", "turn_off", None, out)
+    step(11)  # the room is unlit now, so the spell ends
+    policy._emitted = set()
+    policy._power(_tick_at(run, 12), main, True, a.person_id, "living", "illumination",
+                  "darkness", "turn_on", None, out)
+    for minute in range(12, 26):
+        step(minute)  # 14 bright minutes after relit
+    assert rng.draws == 0
+    step(26)  # the 15th minute of the new spell
+    assert rng.draws == 1

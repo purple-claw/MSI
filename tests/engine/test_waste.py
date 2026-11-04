@@ -105,3 +105,38 @@ def test_none_rule_never_records_waste():
     tracker.on_tick(_Ctx(T0 + 60 * MIN))
     tracker.on_state("l_shade", T0 + 61 * MIN, False)
     assert tracker.finish() == []
+
+
+def test_pending_off_closes_at_the_awake_arrival_tick():
+    # The off state lands 40 s into minute 5, after the person has walked in at minute 5.
+    w = WasteTracker(_manifest())
+    w.on_state("l_main", T0, True)
+    w.on_tick(_Ctx(tick_ms=T0))  # empty room: waste opens
+    w.on_state("l_main", T0 + 5 * MIN + 40_000, False)
+    w.on_tick(_Ctx(tick_ms=T0 + 5 * MIN, awake_rooms=("r1",)))
+    (iv,) = w.finish()
+    assert (iv.start_ts_utc, iv.end_ts_utc) == (T0, T0 + 5 * MIN)
+
+
+def test_pending_off_closes_at_its_timestamp_when_nobody_arrives():
+    w = WasteTracker(_manifest())
+    w.on_state("l_main", T0, True)
+    w.on_tick(_Ctx(tick_ms=T0))
+    w.on_state("l_main", T0 + 3 * MIN + 20_000, False)
+    w.on_tick(_Ctx(tick_ms=T0 + 3 * MIN))  # off not reached yet: still open
+    w.on_tick(_Ctx(tick_ms=T0 + 4 * MIN))  # off reached: closes at the off timestamp
+    (iv,) = w.finish()
+    assert iv.end_ts_utc == T0 + 3 * MIN + 20_000
+
+
+def test_night_circuit_load_is_never_waste():
+    manifest = HomeManifest(
+        home_id="h1", archetype="test", city="pune", tier="premium", lighting_system="knx_dali",
+        rooms=(Room("r1", "passage", 0.005),), adjacency={"r1": ()},
+        loads=(Load("l_night", "r1", "light.onoff", Protocol.knx, "knx_dali", "night", "step"),),
+    )
+    w = WasteTracker(manifest)
+    w.on_state("l_night", T0, True)
+    w.on_tick(_Ctx(tick_ms=T0))
+    w.on_tick(_Ctx(tick_ms=T0 + 10 * MIN))
+    assert w.finish() == []

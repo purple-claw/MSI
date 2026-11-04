@@ -96,7 +96,7 @@ class Lighting:
         self._lit_rooms: dict[str, None] = {}  # rooms with any light on
         self._activity: dict[str, str] = {}  # person id -> activity at the last changed minute
         self._cct_last: dict[str, int] = {}  # load id -> minute of its last cct command
-        self._bright: dict[str, int] = {}  # room id -> consecutive bright minutes with an occupant
+        self._bright: dict[str, list] = {}  # room id -> [bright minutes with an occupant, drawn]
         self._last_pass: int | None = None
         self._emitted: set[tuple[str, str]] = set()
 
@@ -166,9 +166,7 @@ class Lighting:
         if self._main[room].load_id not in self._on and not light_needed(
                 indoor_lux(ctx.outdoor_lux, self._rooms[room]), person.persona, person.activity):
             return
-        arrival = person.prev_room_id != room
-        self._scene(ctx, room, person, "activity_start", _ambience_or_illumination(person.activity),
-                    arrival, out)
+        self._scene(ctx, room, person, "activity_start", _ambience_or_illumination(person.activity), out)
 
     def _presence(self, ctx, person: PersonNow, out: list[Intent]) -> None:
         room = person.room_id
@@ -178,9 +176,8 @@ class Lighting:
         indoor = indoor_lux(ctx.outdoor_lux, self._rooms[room])
         if not light_needed(indoor, person.persona, person.activity):
             return
-        arrival = person.prev_room_id != room
-        trigger = "room_entry" if arrival else "darkness"
-        self._scene(ctx, room, person, trigger, "illumination", arrival, out)
+        trigger = "room_entry" if person.prev_room_id != room else "darkness"
+        self._scene(ctx, room, person, trigger, "illumination", out)
 
     def _pass(self, ctx, person: PersonNow, out: list[Intent]) -> None:
         """A move between two rooms at night is a passage through the night room."""
@@ -195,6 +192,9 @@ class Lighting:
                         "room_entry", "turn_on", None, out)
 
     def _daylight(self, ctx, rng, out: list[Intent]) -> None:
+        for room_id in tuple(self._bright):  # a spell ends when its room is no longer lit
+            if room_id not in self._lit_rooms:
+                del self._bright[room_id]
         if not self._lit_rooms:
             return
         outdoor = ctx.outdoor_lux
@@ -209,11 +209,13 @@ class Lighting:
             if indoor <= DAYLIGHT_FACTOR * head.persona.light_threshold_lux:
                 self._bright.pop(room_id, None)
                 continue
-            n = self._bright.get(room_id, 0) + 1
-            self._bright[room_id] = n
-            if n == DAYLIGHT_MINUTES and rng.random() < head.persona.daylight_off_p:
-                self._power(ctx, main, False, head.person_id, head.activity, "energy_saving",
-                            "daylight", "turn_off", None, out)
+            spell = self._bright.setdefault(room_id, [0, False])  # [bright minutes, drawn]
+            spell[0] += 1
+            if spell[0] >= DAYLIGHT_MINUTES and not spell[1]:
+                spell[1] = True  # one draw per bright spell
+                if rng.random() < head.persona.daylight_off_p:
+                    self._power(ctx, main, False, head.person_id, head.activity, "energy_saving",
+                                "daylight", "turn_off", None, out)
 
     def _night_hold(self, ctx, out: list[Intent]) -> None:
         if self._last_pass is None or ctx.minute - self._last_pass < NIGHT_HOLD_MIN:
@@ -273,22 +275,15 @@ class Lighting:
         return {"main": (dim, False)}
 
     def _scene(self, ctx, room_id: str, person: PersonNow, trigger: str, intent: str,
-               arrival: bool, out: list[Intent]) -> None:
-        """Apply the room's scene for the person's activity.
-
-        On arrival the scene only adds light: a layer left on by an empty room is not switched off
-        in the arrival minute, since the switch-off would land after the person is already in the
-        room (command jitter), and the waste tracker would then count awake occupancy as waste.
-        Later activity changes, with the room occupied, may switch layers off.
-        """
+               out: list[Intent]) -> None:
+        """Apply the room's scene for the person's activity: wanted layers on and shaped, unwanted
+        layers off."""
         plan = self._plan(room_id, person.activity, person.persona.dim_pref)
         for load in self._room_loads[room_id]:
             if load.circuit in (_NIGHT, _DECOR):
                 continue
             want = plan.get(load.circuit)
             if want is None:
-                if arrival:
-                    continue
                 self._power(ctx, load, False, person.person_id, person.activity, "energy_saving",
                             "activity_end", "turn_off", None, out)
                 continue
