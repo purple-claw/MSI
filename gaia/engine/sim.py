@@ -27,6 +27,7 @@ from gaia.engine.context import (
 )
 from gaia.engine.timeline import MINUTES_PER_DAY, SLEEP, fill_grid, stitch_days
 from gaia.engine.waste import GtWaste, WasteTracker
+from gaia.ets.importer import build_ets_home
 from gaia.home.archetypes import ARCHETYPE_SPECS, ARCHETYPES
 from gaia.home.manifest import HomeManifest
 from gaia.household.personas import Household, Member, make_household
@@ -54,6 +55,7 @@ class HomeSpec:
     start_date: date
     days: int
     festivals: frozenset[date]
+    ets_dir: str | None = None  # layouts dir; required by archetype "ets"
 
 
 @dataclass(frozen=True)
@@ -187,8 +189,12 @@ class _Run:
 
 def _build_grids(spec: HomeSpec) -> tuple[HomeManifest, Household, list[list[int]], list[list[int]], list[str]]:
     """Build the manifest, household and per-person minute grids (rooms, activity codes, names)."""
-    manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
-    archetype = ARCHETYPE_SPECS[spec.archetype]
+    if spec.archetype == "ets":
+        manifest, archetype = build_ets_home(spec.ets_dir, spec.home_id, spec.city,
+                                             rng_for(spec.home_seed, "home"))
+    else:
+        manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
+        archetype = ARCHETYPE_SPECS[spec.archetype]
     household = make_household(manifest, archetype, rng_for(spec.home_seed, "household"))
     total = spec.days * MINUTES_PER_DAY
     room_index = {room.room_id: i for i, room in enumerate(manifest.rooms)}

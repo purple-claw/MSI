@@ -1,0 +1,224 @@
+{
+ "prjNm": "CLIENTSECRET Residence",
+ "loads": [
+  {
+   "ldNm": "CLIENTSECRET Living Cove",
+   "ldTyp": "Dimmer",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Living Downlights",
+   "ldTyp": "Dimmer",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Living Fan",
+   "ldTyp": "Switch",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Living Curtain",
+   "ldTyp": "Curtain",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Living AC",
+   "ldTyp": "HVAC",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "MBR Profile",
+   "ldTyp": "Dimmer",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "MBR Downlight",
+   "ldTyp": "Tunable",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "MBR Curtain",
+   "ldTyp": "Curtain",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "MBR VRV",
+   "ldTyp": "HVAC",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Toilet Mirror Light",
+   "ldTyp": "Switch",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Toilet Exhaust",
+   "ldTyp": "Switch",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "MBR Geyser Point",
+   "ldTyp": "Switch",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Kitchen Spot",
+   "ldTyp": "Dimmer",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Pooja Pendant",
+   "ldTyp": "Dimmer",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Dining Chandelier",
+   "ldTyp": "Switch",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Terrace Step Light",
+   "ldTyp": "Switch",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  },
+  {
+   "ldNm": "Mystery Thing",
+   "ldTyp": "Relay",
+   "gAdd": [
+    "1/1/1"
+   ],
+   "GA": {
+    "Swt": "1/1/1"
+   }
+  }
+ ],
+ "rooms": [
+  {
+   "name": "CLIENTSECRET Living Room",
+   "loads": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "name": "Master Bedroom",
+   "loads": [
+    6,
+    7,
+    8,
+    9
+   ]
+  },
+  {
+   "name": "MBR Toilet",
+   "loads": [
+    10,
+    11,
+    12
+   ]
+  },
+  {
+   "name": "Dry Kitchen",
+   "loads": [
+    13
+   ]
+  },
+  {
+   "name": "Pooja Room",
+   "loads": [
+    14
+   ]
+  },
+  {
+   "name": "Switching",
+   "loads": [
+    15,
+    16,
+    17
+   ]
+  }
+ ]
+}

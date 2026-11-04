@@ -1,0 +1,152 @@
+{
+ "prjNm": "Office",
+ "loads": [
+  {
+   "ldNm": "Zone SA0 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA1 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA2 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA3 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA4 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA5 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA6 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA7 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA8 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA9 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA10 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA11 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA12 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA13 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA14 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA15 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA16 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA17 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA18 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  },
+  {
+   "ldNm": "Zone SA19 Light",
+   "ldTyp": "Switch",
+   "gAdd": [],
+   "GA": {}
+  }
+ ],
+ "rooms": [
+  {
+   "name": "Switching",
+   "loads": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+   ]
+  }
+ ]
+}
