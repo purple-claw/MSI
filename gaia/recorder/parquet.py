@@ -17,7 +17,6 @@ import pyarrow.parquet as pq
 from gaia.engine.sim import SimResult
 from gaia.schema.context import (
     CONTEXT_ARROW_SCHEMA,
-    GT_CAUSE_ARROW_SCHEMA,
     GT_PRESENCE_ARROW_SCHEMA,
     GT_WASTE_ARROW_SCHEMA,
     LABEL_ARROW_SCHEMA,
@@ -53,9 +52,6 @@ def _write_files(result: SimResult, directory: Path, world_version: str) -> None
         "events.parquet": events_to_table(result.events),
         "context.parquet": pa.Table.from_pylist(
             [asdict(r) for r in result.context], schema=CONTEXT_ARROW_SCHEMA
-        ),
-        "gt_cause.parquet": pa.Table.from_pylist(
-            [asdict(g) for g in result.gt_cause], schema=GT_CAUSE_ARROW_SCHEMA
         ),
         "labels.parquet": pa.Table.from_pylist(
             [asdict(lb) for lb in result.labels], schema=LABEL_ARROW_SCHEMA

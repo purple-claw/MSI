@@ -75,7 +75,20 @@ class Actuator:
         return self._labels
 
     def apply(self, intents: list[Intent], tick_start_ms: int) -> None:
-        """Apply intents for one tick. The first intent per (load, capability) wins."""
+        """Apply one tick's intents in order.
+
+        The first intent per (load, capability) wins, even if it turns out redundant: a later
+        intent for the same pair is dropped unseen, so a policy must not propose a no-op ahead
+        of the change it means. A redundant intent (the device already holds the value) emits
+        nothing and draws from no stream. An intent whose ``source`` is None draws one source
+        from the interaction stream, or none for a system intent.
+
+        Unknown person ids raise ValueError before any intent of the tick is applied.
+        """
+        for intent in intents:
+            if intent.person_id is not None and intent.person_id not in self._personas:
+                raise ValueError(
+                    f"unknown person_id {intent.person_id!r} in intent for load {intent.load_id!r}")
         seen: set[tuple[str, str]] = set()
         for intent in intents:
             key = (intent.load_id, intent.capability)

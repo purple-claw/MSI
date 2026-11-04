@@ -62,11 +62,11 @@ def test_no_redundant_state(archetype, seed):
 @pytest.mark.parametrize("archetype", ARCHETYPES)
 @settings(max_examples=25, deadline=None)
 @given(seed=SEEDS)
-def test_gt_cause_covers_commands(archetype, seed):
+def test_labels_cover_commands(archetype, seed):
     r = _run(seed, archetype)
     commands = [e.event_id for e in r.events if e.kind == EventKind.command]
-    causes = [c.event_id for c in r.gt_cause]
-    assert sorted(commands) == sorted(causes) and len(set(causes)) == len(causes)
+    labelled = [lb.event_id for lb in r.labels]
+    assert sorted(commands) == sorted(labelled) and len(set(labelled)) == len(labelled)
 
 
 @pytest.mark.parametrize("archetype", ARCHETYPES)
@@ -138,25 +138,19 @@ def test_lit_unoccupied_minutes_lie_inside_waste(archetype, seed):
     total = DAYS * MINUTES_PER_DAY
     start = local_midnight_utc_ms(START, 330)
     run = _Run(spec, manifest, household, start, rooms, acts, names)
-    n = len(run.members)
-    lit_unoccupied: list[tuple[int, int]] = []  # (room index, minute)
+    n = len(household.members)
+    lit_unoccupied: list[tuple[str, int]] = []  # (load id, minute)
     for m in range(total):
-        tick = start + m * 60_000
-        for i in range(n):
-            if m > 0:
-                run._leave(i, m, tick)
-                run._fall_asleep(i, m, tick)
-            run._close_waste_on_entry(i, m, tick)
-            run._presence(i, m, tick)
-        for r in range(len(run.mains)):
-            if run.mains[r] is None or not run.light_on[r]:
+        run.step(m)
+        for r, room in enumerate(manifest.rooms):
+            main = manifest.main_light(room.room_id)
+            if main is None or not run.devices.is_on(main.load_id):
                 continue
             if not any(rooms[j][m] == r and acts[j][m] != SLEEP_CODE for j in range(n)):
-                lit_unoccupied.append((r, m))
+                lit_unoccupied.append((main.load_id, m))
     run.finish()
-    for r, m in lit_unoccupied:
-        load_id = run.mains[r].load_id
+    for load_id, m in lit_unoccupied:
         tick = start + m * 60_000
         assert any(w.load_id == load_id and w.start_ts_utc <= tick
                    and (w.end_ts_utc is None or w.end_ts_utc > tick)
-                   for w in run.gt_waste), (manifest.rooms[r].room_id, m)
+                   for w in run.gt_waste), (load_id, m)

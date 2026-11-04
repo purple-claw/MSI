@@ -1,12 +1,16 @@
+import pytest
+
 from gaia.devices.state import HomeDevices
 from gaia.engine.actuator import Actuator, Intent
 from gaia.home.manifest import HomeManifest, Load, Room
 from gaia.household.personas import PERSONAS
+from gaia.interaction.choose import choose_source
 from gaia.rng import rng_for
 from gaia.schema.events import EventKind, Protocol, Source
 
 HOME_SEED = 11
 TICK = 1_700_000_000_000
+PERSONS_P1 = PERSONAS["working_professional"]
 
 
 def _manifest() -> HomeManifest:
@@ -31,12 +35,21 @@ class _Ids:
         return f"h1:{self.n:09d}"
 
 
-def _actuator(ids=None) -> Actuator:
+def _streams() -> dict:
+    return {
+        "engine": rng_for(HOME_SEED, "engine"),
+        "interaction": rng_for(HOME_SEED, "interaction"),
+        "protocol": rng_for(HOME_SEED, "protocol"),
+    }
+
+
+def _actuator(ids=None, streams=None) -> Actuator:
     manifest = _manifest()
+    streams = streams or _streams()
     return Actuator(
         home_id="h1", manifest=manifest, devices=HomeDevices(manifest), tz_offset_min=330,
-        rng_engine=rng_for(HOME_SEED, "engine"), rng_interaction=rng_for(HOME_SEED, "interaction"),
-        rng_protocol=rng_for(HOME_SEED, "protocol"),
+        rng_engine=streams["engine"], rng_interaction=streams["interaction"],
+        rng_protocol=streams["protocol"],
         personas_by_id={"p1": PERSONAS["working_professional"]},
         next_id=ids or _Ids(),
     )
@@ -164,3 +177,59 @@ def test_sensor_value_is_clamped():
     (sensor,) = [e for e in act.events if e.kind == EventKind.sensor]
     assert sensor.value == 50.0
     assert act.labels[0].clamped is True
+
+
+def _states(streams):
+    return {name: rng.bit_generator.state for name, rng in streams.items()}
+
+
+def test_redundant_intent_draws_nothing_from_any_stream():
+    streams = _streams()
+    act = _actuator(streams=streams)
+    before = _states(streams)
+    act.apply([_intent(value=0.0), _intent(capability="power", value=0.0, device_action="turn_off")], TICK)
+    assert _states(streams) == before
+
+
+def test_explicit_source_skips_the_interaction_draw():
+    streams = _streams()
+    act = _actuator(streams=streams)
+    before = streams["interaction"].bit_generator.state
+    act.apply([_intent(source=Source.app)], TICK)
+    assert streams["interaction"].bit_generator.state == before
+    assert _commands(act)[0].source == Source.app
+
+
+def test_implicit_power_on_makes_exactly_one_source_draw():
+    streams = _streams()
+    act = _actuator(streams=streams)
+    reference = rng_for(HOME_SEED, "interaction")
+    choose_source(PERSONS_P1, reference)
+    act.apply([_intent(capability="cct", value=3000.0, device_action="set_cct", source=None)], TICK)
+    assert [c.capability for c in _commands(act)] == ["power", "cct"]
+    assert streams["interaction"].bit_generator.state == reference.bit_generator.state
+
+
+def test_same_seed_gives_identical_events_and_labels():
+    def run():
+        act = _actuator()
+        act.apply([_intent(value=0.4), _intent(source=None)], TICK)
+        act.apply([_intent(load_id="l_curtain", capability="position", value=0.2,
+                           device_action="set_position")], TICK + 60_000)
+        return act.events, act.labels
+
+    assert run() == run()
+
+
+def test_unknown_person_id_raises_before_any_change():
+    act = _actuator()
+    with pytest.raises(ValueError, match="person_id"):
+        act.apply([_intent(), _intent(load_id="l_curtain", capability="position", value=0.5,
+                                       device_action="set_position", person_id="nobody")], TICK)
+    assert act.events == [] and act.labels == []
+
+
+def test_first_intent_wins_even_when_it_is_redundant():
+    act = _actuator()
+    act.apply([_intent(value=0.0), _intent(value=0.5)], TICK)
+    assert _commands(act) == []
