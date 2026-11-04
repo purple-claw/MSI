@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from functools import partial
 from itertools import groupby
+from operator import attrgetter
 
 from gaia.behaviour.day_plan import plan_day
 from gaia.devices.state import HomeDevices
@@ -41,6 +42,7 @@ from gaia.world.sun import sun_altitude_grid
 MS_PER_MIN = 60_000
 CONTEXT_EVERY_MIN = 15
 _SLOT_NAMES = {"own_bedroom": "bedroom", "own_bathroom": "bathroom"}
+_EVENT_ORDER = attrgetter("ts_utc", "event_id")
 
 
 @dataclass(frozen=True)
@@ -171,7 +173,7 @@ class _Run:
                 finish = getattr(policy, "finish", None)
                 if finish is not None:
                     finish(self._last_ctx)
-        self.actuator.events.sort(key=lambda e: (e.ts_utc, e.event_id))
+        self.actuator.events.sort(key=_EVENT_ORDER)
         self.gt_waste = self.waste.finish()
 
     # --- helpers --------------------------------------------------------------
@@ -220,7 +222,7 @@ def _presence_runs(start_ms: int, manifest: HomeManifest, household: Household,
     for i, member in enumerate(household.members):
         minute = 0
         for (room_idx, asleep), group in groupby(zip(rooms[i], acts[i]), key=_presence_key):
-            length = sum(1 for _ in group)
+            length = len(list(group))
             start = start_ms + minute * MS_PER_MIN
             room_id = None if room_idx < 0 else manifest.rooms[room_idx].room_id
             runs.append(GtPresence(member.person_id, room_id, start,

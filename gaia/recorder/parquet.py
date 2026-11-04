@@ -8,7 +8,6 @@ replaces the old shard and leaves nothing behind.
 import json
 import os
 import shutil
-from dataclasses import asdict
 from pathlib import Path
 
 import pyarrow as pa
@@ -47,21 +46,20 @@ def _manifest_json(result: SimResult, world_version: str) -> str:
     return json.dumps(payload, sort_keys=True, indent=None, separators=(",", ":"))
 
 
+def _records_table(records: list, schema: pa.Schema) -> pa.Table:
+    """Arrow table for dataclass records whose fields are the schema's columns, built column by
+    column. Same values as ``from_pylist([asdict(r) ...])``, without ``asdict``'s recursive copy."""
+    arrays = [pa.array([getattr(r, f.name) for r in records], type=f.type) for f in schema]
+    return pa.Table.from_arrays(arrays, schema=schema)
+
+
 def _write_files(result: SimResult, directory: Path, world_version: str) -> None:
     tables = {
         "events.parquet": events_to_table(result.events),
-        "context.parquet": pa.Table.from_pylist(
-            [asdict(r) for r in result.context], schema=CONTEXT_ARROW_SCHEMA
-        ),
-        "labels.parquet": pa.Table.from_pylist(
-            [asdict(lb) for lb in result.labels], schema=LABEL_ARROW_SCHEMA
-        ),
-        "gt_waste.parquet": pa.Table.from_pylist(
-            [asdict(w) for w in result.gt_waste], schema=GT_WASTE_ARROW_SCHEMA
-        ),
-        "gt_presence.parquet": pa.Table.from_pylist(
-            [asdict(p) for p in result.gt_presence], schema=GT_PRESENCE_ARROW_SCHEMA
-        ),
+        "context.parquet": _records_table(result.context, CONTEXT_ARROW_SCHEMA),
+        "labels.parquet": _records_table(result.labels, LABEL_ARROW_SCHEMA),
+        "gt_waste.parquet": _records_table(result.gt_waste, GT_WASTE_ARROW_SCHEMA),
+        "gt_presence.parquet": _records_table(result.gt_presence, GT_PRESENCE_ARROW_SCHEMA),
     }
     for name, table in tables.items():
         pq.write_table(table, directory / name, compression="zstd")

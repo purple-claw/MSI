@@ -28,3 +28,17 @@ def test_forgets_rate():
     persona = PERSONAS["homemaker"]
     rate = sum(1 for _ in range(N) if forgets(persona, rng)) / N
     assert 0.06 <= rate <= 0.10
+
+
+def test_choose_source_matches_rng_choice_draw_for_draw():
+    # The inverse-CDF draw must equal rng.choice(n, p=probs) and consume the same stream.
+    persona = PERSONAS["working_professional"]
+    keys = sorted(persona.tech_affinity)
+    weights = np.array([persona.tech_affinity[k] for k in keys], dtype=float)
+    probs = weights / weights.sum()
+    a = np.random.default_rng(42)
+    b = np.random.default_rng(42)
+    expected = [keys[int(a.choice(len(keys), p=probs))] for _ in range(2000)]
+    got = [choose_source(persona, b).value for _ in range(2000)]
+    assert got == [{"wall": "wall", "app": "app", "voice": "voice"}[k] for k in expected]
+    assert a.random() == b.random()

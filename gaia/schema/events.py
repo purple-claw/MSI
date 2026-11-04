@@ -106,25 +106,25 @@ def _enum_to_str(member: Enum | None) -> str | None:
 
 
 def events_to_table(events: list[Event]) -> pa.Table:
-    """Convert events to an Arrow table matching EVENT_ARROW_SCHEMA."""
-    columns: dict[str, list] = {name: [] for name in EVENT_ARROW_SCHEMA.names}
-    for ev in events:
-        columns["ts_utc"].append(ev.ts_utc)
-        columns["tz_offset_min"].append(ev.tz_offset_min)
-        columns["home_id"].append(ev.home_id)
-        columns["event_id"].append(ev.event_id)
-        columns["kind"].append(ev.kind.value)
-        columns["room_id"].append(ev.room_id)
-        columns["room_type"].append(ev.room_type)
-        columns["load_id"].append(ev.load_id)
-        columns["load_class"].append(ev.load_class)
-        columns["capability"].append(ev.capability)
-        columns["value"].append(_value_to_str(ev.value))
-        columns["prev_value"].append(_value_to_str(ev.prev_value))
-        columns["source"].append(ev.source.value)
-        columns["actor"].append(ev.actor)
-        columns["protocol"].append(_enum_to_str(ev.protocol))
-        columns["ref_id"].append(ev.ref_id)
-        columns["domain"].append(ev.domain.value)
+    """Convert events to an Arrow table matching EVENT_ARROW_SCHEMA. Built column by column."""
+    columns = {
+        "ts_utc": [ev.ts_utc for ev in events],
+        "tz_offset_min": [ev.tz_offset_min for ev in events],
+        "home_id": [ev.home_id for ev in events],
+        "event_id": [ev.event_id for ev in events],
+        "kind": [ev.kind.value for ev in events],
+        "room_id": [ev.room_id for ev in events],
+        "room_type": [ev.room_type for ev in events],
+        "load_id": [ev.load_id for ev in events],
+        "load_class": [ev.load_class for ev in events],
+        "capability": [ev.capability for ev in events],
+        "value": [_value_to_str(ev.value) for ev in events],
+        "prev_value": [_value_to_str(ev.prev_value) for ev in events],
+        "source": [ev.source.value for ev in events],
+        "actor": [ev.actor for ev in events],
+        "protocol": [_enum_to_str(ev.protocol) for ev in events],
+        "ref_id": [ev.ref_id for ev in events],
+        "domain": [ev.domain.value for ev in events],
+    }
     arrays = [pa.array(columns[f.name], type=f.type) for f in EVENT_ARROW_SCHEMA]
     return pa.Table.from_arrays(arrays, schema=EVENT_ARROW_SCHEMA)

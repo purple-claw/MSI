@@ -123,7 +123,9 @@ class Lighting:
                 self._activity_change(ctx, person, out)
         for person in people:
             if not person.asleep and person.room_id is not None:
-                self._presence(ctx, person, out)
+                main = self._main.get(person.room_id)
+                if main is not None and main.load_id not in self._on:  # else _presence is a no-op
+                    self._presence(ctx, person, out)
         self._daylight(ctx, rng, out)
         self._night_hold(ctx, out)
         if ctx.minute % CCT_CHECK_EVERY == 0:

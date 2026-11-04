@@ -170,6 +170,11 @@ class TickContext:
     tick_ms: int
     _env: HomeEnv = field(repr=False, compare=False)
     _people: tuple[PersonNow, ...] | None = field(default=None, repr=False, compare=False)
+    _changed: bool = field(init=False, default=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        # Read once per minute: policies test ``changed`` many times in one tick.
+        object.__setattr__(self, "_changed", self._env.grid.changed[self.minute])
 
     # --- home -------------------------------------------------------------
 
@@ -184,7 +189,7 @@ class TickContext:
     @property
     def changed(self) -> bool:
         """True when some member's room or sleep state differs from the previous minute."""
-        return self._env.grid.changed[self.minute]
+        return self._changed
 
     # --- time -------------------------------------------------------------
 

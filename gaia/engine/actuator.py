@@ -11,7 +11,7 @@ Event ids are "<home>:<policy>:<counter>", counted per policy, for the same reas
 """
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -87,6 +87,7 @@ class Actuator:
         self._last_ts: dict[str, int] = {}
         self._events: list[Event] = []
         self._labels: list[Label] = []
+        self._checked_labels: set[tuple[str, str, str, str]] = set()  # enum tuples already validated
 
     @property
     def events(self) -> list[Event]:
@@ -161,7 +162,11 @@ class Actuator:
             return  # a redundant intent must not switch an off device on
         source = intent.source if intent.source is not None else self._draw_source(intent)
         if state.requires_power(intent.capability) and not state.is_on():
-            power_on = replace(intent, capability="power", value=1.0, device_action="turn_on")
+            power_on = Intent(
+                load_id=intent.load_id, capability="power", value=1.0, person_id=intent.person_id,
+                activity=intent.activity, intent=intent.intent, trigger=intent.trigger,
+                device_action="turn_on", policy=intent.policy, source=intent.source,
+            )
             self._command(power_on, source, load, tick)
         self._command(intent, source, load, tick)
 
@@ -195,7 +200,11 @@ class Actuator:
             intent=intent, trigger=trigger, device_action=device_action, source_ref=source_ref,
             schema_version=SCHEMA_VERSION, clamped=clamped,
         )
-        validate_label(label)
+        # validate_label depends only on the enum fields, so each combination is checked once.
+        key = (activity, intent, trigger, device_action)
+        if key not in self._checked_labels:
+            validate_label(label)
+            self._checked_labels.add(key)
         self._labels.append(label)
 
     def _event(self, kind: EventKind, load: Load, ts: int, capability: str, value, prev, source: Source,
