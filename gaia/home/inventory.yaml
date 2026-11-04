@@ -6,6 +6,8 @@
 #   fixture  fixture type for lights (see FIXTURES in gaia/registry/registry.py), null for non-lights
 #   circuit  main | accent | cove | task | night | decor for lights; none for non-lights
 #   count    [min, max]: how many loads when the entry is present, drawn uniformly
+#   archetypes  optional list of archetype names this entry applies to (default: all)
+#   source   optional https URL for the numbers, or assumption (the default)
 #   p        presence probability. For circuit main it is a weight: exactly one main entry per
 #            room is chosen with probability p / sum(p) over the room's main entries.
 #
@@ -33,6 +35,8 @@ basic:
     - {class: water.ro_purifier, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.3}
+    - {class: laundry.washing_machine, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+    - {class: power.inverter_ups, fixture: null, circuit: none, count: [1, 1], p: 0.6}
   bedroom:
     - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.5}
     - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.5}
@@ -55,6 +59,8 @@ standard:
     - {class: media.streamer, fixture: null, circuit: none, count: [1, 1], p: 0.6}
     - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.3}
     - {class: media.soundbar, fixture: null, circuit: none, count: [1, 1], p: 0.2}
+    - {class: lock.smart, fixture: null, circuit: none, count: [1, 1], p: 0.3}
+    - {class: doorbell.video, fixture: null, circuit: none, count: [1, 1], p: 0.4}
   kitchen:
     - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.6}
     - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.4}
@@ -62,6 +68,8 @@ standard:
     - {class: water.ro_purifier, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.3}
+    - {class: laundry.washing_machine, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+    - {class: power.inverter_ups, fixture: null, circuit: none, count: [1, 1], p: 0.6}
   bedroom:
     - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.5}
     - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.5}
@@ -79,7 +87,7 @@ premium:
     - {class: light.led_strip, fixture: cove, circuit: cove, count: [1, 1], p: 0.5}
     - {class: light.dimmable, fixture: profile, circuit: accent, count: [1, 2], p: 0.5}
     - {class: light.tunable, fixture: downlight, circuit: task, count: [2, 6], p: 0.5}
-    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 2], p: 1.0}
     - {class: climate.split_ac, fixture: null, circuit: none, count: [1, 1], p: 0.6}
     - {class: media.tv, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: media.stb_dth, fixture: null, circuit: none, count: [1, 1], p: 0.8}
@@ -88,6 +96,8 @@ premium:
     - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.2}
     - {class: sensor.temperature, fixture: null, circuit: none, count: [1, 1], p: 0.5}
     - {class: shade.curtain, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+    - {class: lock.smart, fixture: null, circuit: none, count: [1, 1], p: 0.6, archetypes: [apartment_3bhk, apartment_4bhk]}
+    - {class: doorbell.video, fixture: null, circuit: none, count: [1, 1], p: 0.7, archetypes: [apartment_3bhk, apartment_4bhk]}
   kitchen:
     - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.6}
     - {class: light.tunable, fixture: downlight, circuit: main, count: [1, 1], p: 0.4}
@@ -95,6 +105,8 @@ premium:
     - {class: water.ro_purifier, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.3}
+    - {class: laundry.washing_machine, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+    - {class: power.inverter_ups, fixture: null, circuit: none, count: [1, 1], p: 0.6}
   bedroom:
     - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
     - {class: light.led_strip, fixture: cove, circuit: cove, count: [1, 1], p: 0.5}
@@ -119,9 +131,10 @@ premium:
   passage:
     - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 1.0}
     - {class: light.onoff, fixture: step, circuit: night, count: [2, 4], p: 1.0}
-    - {class: lock.smart, fixture: null, circuit: none, count: [1, 1], p: 1.0}
-    - {class: doorbell.video, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: lock.smart, fixture: null, circuit: none, count: [1, 1], p: 0.7}
+    - {class: doorbell.video, fixture: null, circuit: none, count: [1, 1], p: 0.8}
     - {class: sensor.motion, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+    - {class: water.pump, fixture: null, circuit: none, count: [1, 1], p: 0.9}
   staircase:
     - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 1.0}
     - {class: light.onoff, fixture: step, circuit: night, count: [3, 8], p: 1.0}
@@ -133,7 +146,7 @@ luxury:
     - {class: light.led_strip, fixture: cove, circuit: cove, count: [1, 1], p: 0.6}
     - {class: light.dimmable, fixture: profile, circuit: accent, count: [1, 3], p: 0.6}
     - {class: light.tunable, fixture: downlight, circuit: task, count: [4, 8], p: 0.7}
-    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 2], p: 1.0}
     - {class: climate.cassette_ac, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: media.tv, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: media.stb_dth, fixture: null, circuit: none, count: [1, 1], p: 0.8}
@@ -171,6 +184,7 @@ luxury:
     - {class: media.screen_motorised, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: media.av_receiver, fixture: null, circuit: none, count: [1, 1], p: 1.0}
     - {class: shade.curtain, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: climate.split_ac, fixture: null, circuit: none, count: [1, 1], p: 1.0}
   study:
     - {class: light.tunable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
     - {class: light.dimmable, fixture: downlight, circuit: task, count: [1, 2], p: 1.0}
@@ -193,12 +207,12 @@ luxury:
   garden:
     - {class: light.onoff, fixture: landscape, circuit: main, count: [1, 1], p: 1.0}
     - {class: light.onoff, fixture: landscape, circuit: decor, count: [2, 6], p: 1.0}
+    - {class: cctv.camera, fixture: null, circuit: none, count: [1, 1], p: 0.7}
+    - {class: gate.motor, fixture: null, circuit: none, count: [1, 1], p: 0.8}
   lobby:
     - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
-    - {class: lock.smart, fixture: null, circuit: none, count: [1, 1], p: 1.0}
-    - {class: doorbell.video, fixture: null, circuit: none, count: [1, 1], p: 1.0}
-    - {class: gate.motor, fixture: null, circuit: none, count: [1, 1], p: 1.0}
-    - {class: cctv.camera, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: lock.smart, fixture: null, circuit: none, count: [1, 1], p: 0.9}
+    - {class: doorbell.video, fixture: null, circuit: none, count: [1, 1], p: 0.9}
   staircase:
     - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 1.0}
     - {class: light.onoff, fixture: step, circuit: night, count: [3, 8], p: 1.0}

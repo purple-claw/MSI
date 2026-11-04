@@ -2,6 +2,7 @@
 
 inventory.yaml is validated at import. Room draws come only from the rng passed in: one weighted
 choice for the room's main light, then each other entry in YAML order (presence, then count).
+The main circuit is drawn first; the YAML order of the other entries is kept.
 """
 
 from collections.abc import Sequence
@@ -21,10 +22,13 @@ CIRCUITS = frozenset({"main", "accent", "cove", "task", "night", "decor"})
 MAIN_CLASSES = frozenset({"light.onoff", "light.dimmable", "light.tunable"})
 DALI_CLASSES = frozenset({"light.tunable", "light.rgbw", "light.rgbcct"})
 IR_CLASSES = frozenset({"climate.split_ac", "climate.cassette_ac"})
-IR_SHARE = 0.6
-WIFI_SHARE = 0.5
+IR_SHARE = 0.6  # assumption: share of AC units on an IR gateway rather than the lighting system
+WIFI_SHARE = 0.5  # assumption: share of Wi-Fi (rather than Matter) for fans, utility, security, sensors
+BEDROOM_ONE_AC_BONUS = 0.2  # assumption: bedroom_1 is the main bedroom, so its AC p is raised
+DEFAULT_SOURCE = "assumption"
 
 # Lighting system per tier, as (system, weight). Drawn once per home.
+# assumption: weights are design choices until calibrated from ETS (Task 11).
 TIER_LIGHTING: dict[str, tuple[tuple[str, float], ...]] = {
     "basic": (("zigbee_hue", 0.3), ("matter_wifi", 0.4), ("knx_dali", 0.3)),
     "standard": (("zigbee_hue", 0.3), ("matter_wifi", 0.4), ("knx_dali", 0.3)),
@@ -49,6 +53,13 @@ class InventoryEntry:
     circuit: str
     count: tuple[int, int]
     p: float
+    archetypes: tuple[str, ...]  # empty = every archetype using this tier and room
+    source: str  # a https URL, or "assumption"
+
+
+def room_type_of(room_name: str) -> str:
+    """Room type of a room name: bedroom_2 -> bedroom, home_theatre -> home_theatre."""
+    return room_name.rsplit("_", 1)[0] if room_name[-1].isdigit() else room_name
 
 
 class _EntrySpec(BaseModel):
@@ -59,11 +70,15 @@ class _EntrySpec(BaseModel):
     circuit: str
     count: tuple[int, int]
     p: float = Field(ge=0, le=1)
+    archetypes: tuple[str, ...] = ()
+    source: str = DEFAULT_SOURCE
 
     @model_validator(mode="after")
     def _check(self):
         if self.load_class not in REGISTRY:
             raise ValueError(f"unknown load class {self.load_class!r}")
+        if not (self.source == DEFAULT_SOURCE or self.source.startswith("https://")):
+            raise ValueError(f"{self.load_class}: source must be a https URL or 'assumption': {self.source!r}")
         is_light = get_load_class(self.load_class).domain == "lighting"
         if is_light:
             if self.circuit not in CIRCUITS:
@@ -102,7 +117,8 @@ def _parse_tiers(raw: object) -> dict[str, dict[str, tuple[InventoryEntry, ...]]
                     spec = _EntrySpec.model_validate(body)
                 except ValidationError as exc:
                     raise ValueError(f"invalid entry in {tier}/{room_type}: {exc}") from exc
-                parsed.append(InventoryEntry(spec.load_class, spec.fixture, spec.circuit, spec.count, spec.p))
+                parsed.append(InventoryEntry(spec.load_class, spec.fixture, spec.circuit, spec.count,
+                                             spec.p, spec.archetypes, spec.source))
             if not any(e.circuit == "main" for e in parsed):
                 raise ValueError(f"{tier}/{room_type}: every room needs one main circuit entry")
             if sum(e.p for e in parsed if e.circuit == "main") <= 0:
@@ -137,18 +153,23 @@ def weighted_choice(options: Sequence[tuple[_T, float]], rng: np.random.Generato
     return options[-1][0]
 
 
-def choose_entries(tier: str, room_type: str, rng: np.random.Generator) -> list[InventoryEntry]:
+def choose_entries(tier: str, archetype: str, room_name: str, rng: np.random.Generator) -> list[InventoryEntry]:
     """Return the loads for one room, main circuit first, then the other entries in YAML order."""
+    room_type = room_type_of(room_name)
     try:
         entries = INVENTORY[tier][room_type]
     except KeyError:
         raise KeyError(f"no inventory for tier {tier!r} room {room_type!r}") from None
-    mains = [(e, e.p) for e in entries if e.circuit == "main"]
+    applicable = [e for e in entries if not e.archetypes or archetype in e.archetypes]
+    mains = [(e, e.p) for e in applicable if e.circuit == "main"]
     chosen = [weighted_choice(mains, rng)]
-    for e in entries:
+    for e in applicable:
         if e.circuit == "main":
             continue
-        if rng.random() < e.p:
+        p = e.p
+        if room_name == "bedroom_1" and e.load_class in IR_CLASSES:
+            p = min(1.0, p + BEDROOM_ONE_AC_BONUS)
+        if rng.random() < p:
             lo, hi = e.count
             n = lo if lo == hi else int(rng.integers(lo, hi + 1))
             chosen.extend([e] * n)

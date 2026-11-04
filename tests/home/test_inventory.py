@@ -10,6 +10,7 @@ from gaia.home.inventory import (
     MAIN_CLASSES,
     TIER_LIGHTING,
     TIERS,
+    choose_entries,
     load_inventory,
 )
 from gaia.registry.registry import FIXTURES, REGISTRY
@@ -17,6 +18,8 @@ from gaia.rng import rng_for
 from gaia.schema.events import Protocol
 
 ARCHETYPE_NAMES = sorted(ARCHETYPE_SPECS)
+DIST_HOMES = 400
+SHARE_TOL = 0.07
 DALI_CLASSES = {"light.tunable", "light.rgbw", "light.rgbcct"}
 
 
@@ -161,3 +164,120 @@ def test_loader_rejects_duplicate_room_key():
     text = yaml.safe_dump(_base_inventory()) + "basic:\n  bedroom: []\n"
     with pytest.raises(ValueError):
         load_inventory(text)
+
+
+# Minimums the brief pins. Each row: (tier, room, predicate on entries, description).
+_MINIMUMS = [
+    ("luxury", "home_theatre", lambda es: all(_entries_has(es, c, 1.0) for c in
+                                             ("media.projector", "media.screen_motorised", "media.av_receiver")),
+     "projector, motorised screen and AV receiver"),
+    ("luxury", "home_theatre", lambda es: _entries_has(es, "climate.split_ac", 1.0), "an AC"),
+    ("basic", "bedroom", lambda es: _has_prefix(es, "fan."), "a fan"),
+    ("basic", "bedroom", lambda es: _entries_has(es, "climate.split_ac"), "an AC"),
+    ("standard", "bedroom", lambda es: _has_prefix(es, "fan."), "a fan"),
+    ("standard", "bedroom", lambda es: _entries_has(es, "climate.split_ac"), "an AC"),
+    ("premium", "bedroom", lambda es: _has_prefix(es, "fan."), "a fan"),
+    ("premium", "bedroom", lambda es: _entries_has(es, "climate.split_ac"), "an AC"),
+    ("luxury", "bedroom", lambda es: _has_prefix(es, "fan."), "a fan"),
+    ("luxury", "bedroom", lambda es: _entries_has(es, "climate.split_ac"), "an AC"),
+    ("premium", "pooja", lambda es: any(e.load_class == "light.onoff" and e.fixture == "accent"
+                                        and e.circuit == "main" for e in es), "an accent lamp on main"),
+    ("luxury", "pooja", lambda es: any(e.load_class == "light.onoff" and e.fixture == "accent"
+                                       and e.circuit == "main" for e in es), "an accent lamp on main"),
+    ("premium", "passage", lambda es: any(e.circuit == "night" for e in es), "night step lights"),
+    ("premium", "staircase", lambda es: any(e.circuit == "night" for e in es), "night step lights"),
+    ("luxury", "staircase", lambda es: any(e.circuit == "night" for e in es), "night step lights"),
+]
+
+
+def _entries_has(es, load_class, min_p=0.0):
+    return any(e.load_class == load_class and e.p >= min_p for e in es)
+
+
+def _has_prefix(es, prefix):
+    return any(e.load_class.startswith(prefix) for e in es)
+
+
+@pytest.mark.parametrize("tier, room, check, what", _MINIMUMS,
+                         ids=[f"{t}-{r}-{w}" for t, r, _, w in _MINIMUMS])
+def test_minimum_coverage(tier, room, check, what):
+    assert check(INVENTORY[tier][room]), f"{tier}/{room} needs {what}"
+
+
+@pytest.mark.parametrize("tier", ["premium", "luxury"])
+@pytest.mark.parametrize("room", ["living", "bedroom"])
+def test_premium_plus_layers_at_least_half(tier, room):
+    es = INVENTORY[tier][room]
+    assert any(e.circuit == "cove" and e.p >= 0.5 for e in es), "cove"
+    assert any(e.circuit == "accent" and e.p >= 0.5 for e in es), "accent"
+    assert any(e.load_class == "light.tunable" and e.p >= 0.5 for e in es), "tunable"
+
+
+def test_every_source_is_assumption_or_url():
+    for tier, rooms in INVENTORY.items():
+        for room, entries in rooms.items():
+            for e in entries:
+                assert e.source == "assumption" or e.source.startswith("https://"), (tier, room, e)
+
+
+def test_loader_rejects_bad_source():
+    data = _base_inventory()
+    data["basic"]["bedroom"][0].update(source="http://example.com")
+    with pytest.raises(ValueError, match="source"):
+        load_inventory(yaml.safe_dump(data))
+
+
+def test_archetype_filters_name_known_archetypes():
+    for tier, rooms in INVENTORY.items():
+        for room, entries in rooms.items():
+            for e in entries:
+                for name in e.archetypes:
+                    assert name in ARCHETYPE_SPECS, (tier, room, name)
+
+
+@pytest.mark.parametrize("archetype", ARCHETYPE_NAMES)
+def test_every_room_keeps_a_main_after_archetype_filter(archetype):
+    spec = ARCHETYPE_SPECS[archetype]
+    for tier in spec.tier_weights:
+        names = ["living", "kitchen", *spec.extra_rooms,
+                 *(f"bedroom_{i}" for i in range(1, spec.bedrooms + 1)),
+                 *(f"bathroom_{i}" for i in range(1, spec.bathrooms + 1))]
+        for name in names:
+            chosen = choose_entries(tier, archetype, name, rng_for(3, name))
+            assert sum(e.circuit == "main" for e in chosen) == 1, (tier, name)
+
+
+def test_entrances_by_archetype():
+    # 4BHK is premium only: living entry lock at p 0.6 (apartments), none in the independent house.
+    apt = [_build("apartment_4bhk", s) for s in range(400)]
+    with_lock = sum(any(ld.load_class == "lock.smart" for ld in m.loads_in("h1:living")) for m in apt)
+    assert abs(with_lock / len(apt) - 0.6) <= SHARE_TOL
+    ind = [_build("independent_house", s) for s in range(200)]
+    assert all(not any(ld.load_class == "lock.smart" for ld in m.loads_in("h1:living")) for m in ind)
+    villas = [_build("villa", s) for s in range(200)]
+    assert all(not any(ld.load_class == "lock.smart" for ld in m.loads_in("h1:living")) for m in villas)
+
+
+def test_distribution_of_tiers_and_lighting_systems():
+    from collections import Counter
+
+    from gaia.home.inventory import TIER_LIGHTING
+    by_tier = {t: Counter() for t in TIER_LIGHTING}
+    for name in ARCHETYPE_NAMES:
+        spec = ARCHETYPE_SPECS[name]
+        tiers = Counter()
+        for seed in range(DIST_HOMES):
+            m = _build(name, seed)
+            tiers[m.tier] += 1
+            by_tier[m.tier][m.lighting_system] += 1
+        for tier, w in spec.tier_weights.items():
+            share = tiers[tier] / DIST_HOMES
+            assert abs(share - w) <= SHARE_TOL, (name, tier, share, w)
+        assert set(tiers) <= set(spec.tier_weights), (name, tiers)
+    for tier, options in TIER_LIGHTING.items():
+        total = sum(by_tier[tier].values())
+        assert total > 0, tier
+        weight_sum = sum(w for _, w in options)
+        for system, w in options:
+            share = by_tier[tier][system] / total
+            assert abs(share - w / weight_sum) <= SHARE_TOL, (tier, system, share, w)

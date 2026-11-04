@@ -12,7 +12,13 @@ from typing import Callable
 
 import numpy as np
 
-from gaia.home.inventory import TIER_LIGHTING, assign_protocol, choose_entries, weighted_choice
+from gaia.home.inventory import (
+    TIER_LIGHTING,
+    assign_protocol,
+    choose_entries,
+    room_type_of,
+    weighted_choice,
+)
 from gaia.home.manifest import HomeManifest, Load, Room
 
 
@@ -65,10 +71,6 @@ def _room_names(spec: ArchetypeSpec) -> list[str]:
     return names
 
 
-def _room_type(name: str) -> str:
-    return name.rsplit("_", 1)[0] if name[-1].isdigit() else name
-
-
 def build_home(archetype: ArchetypeSpec, home_id: str, city: str, rng: np.random.Generator) -> HomeManifest:
     tier = weighted_choice(list(archetype.tier_weights.items()), rng)
     lighting_system = weighted_choice(TIER_LIGHTING[tier], rng)
@@ -76,10 +78,9 @@ def build_home(archetype: ArchetypeSpec, home_id: str, city: str, rng: np.random
     loads: list[Load] = []
 
     for name in _room_names(archetype):
-        room_type = _room_type(name)
         room_id = f"{home_id}:{name}"
-        rooms.append(Room(room_id, room_type, _WINDOW[room_type]))
-        for counter, entry in enumerate(choose_entries(tier, room_type, rng)):
+        rooms.append(Room(room_id, room_type_of(name), _WINDOW[room_type_of(name)]))
+        for counter, entry in enumerate(choose_entries(tier, archetype.name, name, rng)):
             system, protocol = assign_protocol(entry.load_class, lighting_system, rng)
             loads.append(Load(
                 load_id=f"{room_id}:{entry.load_class}:{counter}", room_id=room_id,
