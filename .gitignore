@@ -6,3 +6,6 @@ __pycache__/
 /data/
 *.parquet
 .superpowers/
+.hypothesis
+.claude
+.pytest_cache
