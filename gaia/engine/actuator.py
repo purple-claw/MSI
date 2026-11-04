@@ -49,6 +49,14 @@ class Intent:
 
 
 @dataclass(frozen=True)
+class SensorReading:
+    """A sensor report for one capability, sent through ``Actuator.emit_sensor``."""
+    load_id: str
+    capability: str
+    value: float
+
+
+@dataclass(frozen=True)
 class ActuatorStreams:
     engine: np.random.Generator
     interaction: np.random.Generator
@@ -100,28 +108,33 @@ class Actuator:
             self._streams[policy] = streams
         return streams
 
-    def apply(self, intents: list[Intent], tick_start_ms: int) -> None:
-        """Apply one tick's intents in order.
+    def apply(self, items: list[Intent | SensorReading], tick_start_ms: int) -> None:
+        """Apply one tick's intents and sensor readings in order.
 
         The first intent per (load, capability) wins, even if it turns out redundant: a later
         intent for the same pair is dropped unseen, so a policy must not propose a no-op ahead
         of the change it means. A redundant intent (the device already holds the value) emits
         nothing and draws from no stream. An intent whose ``source`` is None draws one source
-        from its policy's interaction stream, or none for a system intent.
+        from its policy's interaction stream, or none for a system intent. A reading is never
+        deduplicated: each one emits a sensor event through ``emit_sensor``.
 
-        Unknown person ids raise ValueError before any intent of the tick is applied.
+        Unknown person ids raise ValueError before any item of the tick is applied.
         """
+        intents = [item for item in items if isinstance(item, Intent)]
         for intent in intents:
             if intent.person_id is not None and intent.person_id not in self._personas:
                 raise ValueError(
                     f"unknown person_id {intent.person_id!r} in intent for load {intent.load_id!r}")
         seen: set[tuple[str, str]] = set()
-        for intent in intents:
-            key = (intent.load_id, intent.capability)
+        for item in items:
+            if isinstance(item, SensorReading):
+                self.emit_sensor(item.load_id, item.capability, item.value, tick_start_ms)
+                continue
+            key = (item.load_id, item.capability)
             if key in seen:
                 continue
             seen.add(key)
-            self._apply_one(intent, tick_start_ms)
+            self._apply_one(item, tick_start_ms)
 
     def emit_sensor(self, load_id: str, capability: str, value: float, tick_ms: int) -> None:
         """Report a sensor reading. Sensors report even when the value is unchanged."""

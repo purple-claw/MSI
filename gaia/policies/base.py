@@ -8,14 +8,14 @@ from typing import Protocol
 
 import numpy as np
 
-from gaia.engine.actuator import Intent
+from gaia.engine.actuator import Intent, SensorReading
 from gaia.engine.context import TickContext
 
 
 class Policy(Protocol):
     name: str
 
-    def tick(self, ctx: TickContext, rng: np.random.Generator) -> list[Intent]: ...
+    def tick(self, ctx: TickContext, rng: np.random.Generator) -> list[Intent | SensorReading]: ...
 
     def finish(self, ctx: TickContext) -> None:
         """Optional: the engine calls this once after the last tick, with the final context.

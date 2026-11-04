@@ -13,10 +13,12 @@ from typing import Callable
 import numpy as np
 
 from gaia.home.inventory import (
+    SENSOR_RICHNESS,
     TIER_LIGHTING,
     assign_protocol,
     choose_entries,
     room_type_of,
+    sensor_loads,
     weighted_choice,
 )
 from gaia.home.manifest import HomeManifest, Load, Room
@@ -89,6 +91,10 @@ def build_home(archetype: ArchetypeSpec, home_id: str, city: str, rng: np.random
                 fixture=entry.fixture,
             ))
 
+    # Sensor richness is drawn last, so every draw above is the same for every richness.
+    richness = weighted_choice(SENSOR_RICHNESS, rng)
+    loads.extend(sensor_loads(richness, archetype.name, rooms, loads, rng))
+
     hub = f"{home_id}:living"
     adjacency: dict[str, tuple[str, ...]] = {}
     for room in rooms:
@@ -106,6 +112,7 @@ def build_home(archetype: ArchetypeSpec, home_id: str, city: str, rng: np.random
         rooms=tuple(rooms),
         adjacency=adjacency,
         loads=tuple(loads),
+        sensor_richness=richness,
     )
 
 

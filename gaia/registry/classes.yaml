@@ -550,7 +550,7 @@ sensor.contact:
   domain: sensing
   matter_device_type: contact_sensor
   capabilities:
-    - {name: contact, kind: binary}
+    - {name: contact, kind: binary, semantics: "1 = open, 0 = closed"}
   power_w: {"on": 0}
   power_source: assumption
   waste_rule: none

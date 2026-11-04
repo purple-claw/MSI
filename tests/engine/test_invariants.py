@@ -1,3 +1,4 @@
+from bisect import bisect_left
 from collections import defaultdict
 from datetime import date
 
@@ -71,7 +72,7 @@ def test_no_redundant_state(archetype, seed):
 @given(seed=SEEDS)
 def test_labels_cover_commands(archetype, seed):
     r = _run(seed, archetype)
-    commands = [e.event_id for e in r.events if e.kind == EventKind.command]
+    commands = [e.event_id for e in r.events if e.kind in (EventKind.command, EventKind.sensor)]
     labelled = [lb.event_id for lb in r.labels]
     assert sorted(commands) == sorted(labelled) and len(set(labelled)) == len(labelled)
 
@@ -210,11 +211,32 @@ def test_labelled_person_is_awake_at_home_and_doing_that_activity(archetype, see
             return lb.activity == act_names[acts[i][m]]
         return m >= 1 and awake_home(i, m - 1) and lb.activity == act_names[acts[i][m - 1]]
 
+    state_ts: dict[str, list[int]] = defaultdict(list)  # load -> sorted timestamps of its states
+    for e in result.events:
+        if e.kind == EventKind.state:
+            state_ts[e.load_id].append(e.ts_utc)
+    for ts_list in state_ts.values():
+        ts_list.sort()
+
     for lb in result.labels:
         if lb.person_id is None:
             continue
-        # The command's tick is its timestamp's minute, unless the serial order of the load pushed the
-        # timestamp past the boundary (a previous state arriving late): then the tick is the minute before.
-        minute = min((events[lb.event_id].ts_utc - start_ms) // MS_PER_MIN, len(acts[0]) - 1)
+        ev = events[lb.event_id]
+        # The command's minute is its timestamp's minute. Serial order can push a command just past a
+        # boundary (within 5 s) when the load's previous state sits in the tick minute, or was itself
+        # pushed into the timestamp's minute: then the tick is the minute before, and the person must
+        # be an actor there.
+        minute = min((ev.ts_utc - start_ms) // MS_PER_MIN, len(acts[0]) - 1)
         i = index_of[lb.person_id]
-        assert is_actor(i, minute, lb) or is_actor(i, minute - 1, lb), ("not an actor", lb)
+        if is_actor(i, minute, lb):
+            continue
+        ts_list = state_ts[ev.load_id]
+        k = bisect_left(ts_list, ev.ts_utc)
+        prev_ts = ts_list[k - 1] if k else None
+        pushed = (
+            minute >= 1
+            and (ev.ts_utc - start_ms) % MS_PER_MIN < 5_000
+            and prev_ts is not None
+            and start_ms + (minute - 1) * MS_PER_MIN <= prev_ts < start_ms + (minute + 1) * MS_PER_MIN
+        )
+        assert pushed and is_actor(i, minute - 1, lb), ("not an actor", lb)

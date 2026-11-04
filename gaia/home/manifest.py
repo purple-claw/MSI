@@ -39,6 +39,7 @@ class HomeManifest:
     # dict is unhashable; excluded from hash, still compared for equality.
     adjacency: dict[str, tuple[str, ...]] = field(hash=False)
     loads: tuple[Load, ...]
+    sensor_richness: str = "none"  # none, some or rich: which inventory sensors were added
 
     def to_json(self) -> str:
         payload = {
@@ -49,6 +50,7 @@ class HomeManifest:
             "lighting_system": self.lighting_system,
             "rooms": [asdict(r) for r in self.rooms],
             "adjacency": {k: list(v) for k, v in self.adjacency.items()},
+            "sensor_richness": self.sensor_richness,
             "loads": [
                 {
                     "load_id": ld.load_id,

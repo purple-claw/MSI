@@ -91,6 +91,8 @@ def test_protocol_matches_system(name):
                 system = (m.lighting_system, _expected_system_protocol(m.lighting_system, cls))
                 assert got in (ir, system), ld
                 seen_ir |= got == ir
+            elif cls.startswith(("sensor.", "meter.")) and got == ("zigbee_hue", "zigbee"):
+                pass  # sensors added by sensor richness ride zigbee or Matter (see sensor_loads)
             else:
                 assert got in (("ip", "wifi"), ("matter_wifi", "matter")), ld
                 seen_wifi |= got == ("ip", "wifi")

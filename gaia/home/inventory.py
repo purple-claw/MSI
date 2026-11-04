@@ -5,6 +5,7 @@ choice for the room's main light, then each other entry in YAML order (presence,
 The main circuit is drawn first; the YAML order of the other entries is kept.
 """
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib.resources import files
@@ -14,6 +15,7 @@ import numpy as np
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from gaia.home.manifest import Load, Room
 from gaia.registry.registry import FIXTURES, REGISTRY, _StrictLoader, get_load_class
 from gaia.schema.events import Protocol
 
@@ -26,6 +28,9 @@ IR_SHARE = 0.6  # assumption: share of AC units on an IR gateway rather than the
 WIFI_SHARE = 0.5  # assumption: share of Wi-Fi (rather than Matter) for fans, utility, security, sensors
 BEDROOM_ONE_AC_BONUS = 0.2  # assumption: bedroom_1 is the main bedroom, so its AC p is raised
 DEFAULT_SOURCE = "assumption"
+SENSOR_RICHNESS: tuple[tuple[str, float], ...] = (("none", 0.4), ("some", 0.4), ("rich", 0.2))  # assumption
+ZIGBEE_SENSOR_P = 0.5  # assumption: share of added sensors on zigbee rather than Matter
+_SENSOR_SYSTEM = {Protocol.zigbee: "zigbee_hue", Protocol.matter: "matter_wifi"}
 
 # Lighting system per tier, as (system, weight). Drawn once per home.
 # assumption: weights are design choices until calibrated from ETS (Task 11).
@@ -200,3 +205,68 @@ def assign_protocol(load_class: str, lighting_system: str, rng: np.random.Genera
     if rng.random() < WIFI_SHARE:
         return "ip", Protocol.wifi
     return "matter_wifi", Protocol.matter
+
+
+def _wanted_sensors(richness: str, archetype: str, rooms: Sequence[Room],
+                    loads: Sequence[Load]) -> list[tuple[str, str]]:
+    """(room id, load class) of the sensors a richness level adds, in draw order.
+
+    A room never gets a second sensor of a class it already has, from the inventory or from this
+    list. The main door is the living room's, or the lobby's in a villa.
+    """
+    have = {(ld.room_id, ld.load_class) for ld in loads}
+    lit = {ld.room_id for ld in loads if ld.is_main_light}
+    wanted: list[tuple[str, str]] = []
+
+    def add(room_id: str, load_class: str) -> None:
+        if (room_id, load_class) not in have:
+            have.add((room_id, load_class))
+            wanted.append((room_id, load_class))
+
+    def of_types(*room_types: str) -> list[str]:
+        return [r.room_id for r in rooms if r.room_type in room_types]
+
+    door = of_types("lobby" if archetype == "villa" else "living")[0]
+    for room_id in of_types("passage", "staircase", "bathroom"):
+        add(room_id, "sensor.motion")
+    add(door, "sensor.contact")
+    if richness == "rich":
+        for room_id in of_types("living", "bedroom"):
+            add(room_id, "sensor.presence")
+        for room in rooms:
+            if room.room_type in ("living", "bedroom") or room.room_id not in lit:
+                continue
+            if (room.room_id, "sensor.presence") not in have:
+                add(room.room_id, "sensor.motion")
+        add(of_types("living")[0], "sensor.lux")
+        for room_id in of_types("bedroom"):
+            add(room_id, "sensor.temperature")
+            add(room_id, "sensor.humidity")
+        utility = of_types("utility")
+        add(utility[0] if utility else of_types("living")[0], "meter.energy")
+    return wanted
+
+
+def sensor_loads(richness: str, archetype: str, rooms: Sequence[Room], loads: Sequence[Load],
+                 rng: np.random.Generator) -> list[Load]:
+    """The sensor loads a richness level adds to a home whose other loads are ``loads``.
+
+    Called after every other draw of the home, so the other loads never depend on richness.
+    One protocol draw per added sensor, in the order of ``_wanted_sensors``. A load keeps the
+    counter after the room's last load, so load ids stay unique within a room.
+    """
+    if richness not in ("none", "some", "rich"):
+        raise ValueError(f"unknown sensor richness: {richness!r}")
+    if richness == "none":
+        return []
+    counter = Counter(ld.room_id for ld in loads)
+    added: list[Load] = []
+    for room_id, load_class in _wanted_sensors(richness, archetype, rooms, loads):
+        protocol = Protocol.zigbee if rng.random() < ZIGBEE_SENSOR_P else Protocol.matter
+        k = counter[room_id]
+        counter[room_id] += 1
+        added.append(Load(
+            load_id=f"{room_id}:{load_class}:{k}", room_id=room_id, load_class=load_class,
+            protocol=protocol, system=_SENSOR_SYSTEM[protocol], circuit="none",
+        ))
+    return added
