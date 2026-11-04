@@ -3,7 +3,7 @@ from collections import Counter
 import pytest
 
 from gaia.home.archetypes import ARCHETYPES, APARTMENTS
-from gaia.registry.load_classes import REGISTRY
+from gaia.registry.registry import REGISTRY
 from gaia.rng import rng_for
 
 ARCHETYPE_NAMES = sorted(APARTMENTS)
@@ -21,7 +21,7 @@ def test_every_room_has_one_main_light(name):
             mains = [ld for ld in m.loads_in(room.room_id) if ld.is_main_light]
             assert len(mains) == 1, (seed, room.room_id)
             assert m.main_light(room.room_id) == mains[0]
-            assert mains[0].load_class in ("light.dim", "light.onoff")
+            assert mains[0].load_class in ("light.dimmable", "light.onoff")
 
 
 @pytest.mark.parametrize("name", ARCHETYPE_NAMES)

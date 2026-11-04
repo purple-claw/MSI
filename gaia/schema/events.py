@@ -36,6 +36,10 @@ class Protocol(str, Enum):
     matter = "matter"
     zigbee = "zigbee"
     wifi = "wifi"
+    lutron = "lutron"
+    dali = "dali"
+    ip = "ip"
+    ir = "ir"
     other = "other"
 
 

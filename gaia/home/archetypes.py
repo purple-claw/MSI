@@ -11,7 +11,7 @@ from typing import Callable
 import numpy as np
 
 from gaia.home.manifest import HomeManifest, Load, Room
-from gaia.registry.load_classes import get_load_class
+from gaia.registry.registry import get_load_class
 from gaia.schema.events import Protocol
 
 
@@ -60,17 +60,17 @@ def _room_loads(room_name: str, is_1rk: bool) -> list[tuple[str, float | None]]:
     The main light is always first; its class is drawn separately.
     """
     if room_name == "living":
-        extras: list[tuple[str, float | None]] = [("fan.speed", None)]
+        extras: list[tuple[str, float | None]] = [("fan.ceiling", None)]
         if is_1rk:
-            extras.append(("ac", 0.5))
-        extras.append(("tv_media", None))
+            extras.append(("climate.split_ac", 0.5))
+        extras.append(("media.tv", None))
         return extras
     if room_name == "kitchen":
-        return [("exhaust", None)]
+        return [("fan.exhaust", None)]
     if room_name.startswith("bedroom_"):
         p_ac = 0.8 if room_name == "bedroom_1" else 0.4
-        return [("fan.speed", None), ("ac", p_ac)]
-    return [("geyser", 0.5)]  # bathroom
+        return [("fan.ceiling", None), ("climate.split_ac", p_ac)]
+    return [("water.geyser", 0.5)]  # bathroom
 
 
 def build_apartment(spec: ApartmentSpec, home_id: str, city: str, rng: np.random.Generator) -> HomeManifest:
@@ -94,7 +94,7 @@ def build_apartment(spec: ApartmentSpec, home_id: str, city: str, rng: np.random
             )
             counter += 1
 
-        add("light.dim" if rng.random() < 0.5 else "light.onoff", is_main=True)
+        add("light.dimmable" if rng.random() < 0.5 else "light.onoff", is_main=True)
         for load_class, p in _room_loads(name, is_1rk):
             if p is None or rng.random() < p:
                 add(load_class)
