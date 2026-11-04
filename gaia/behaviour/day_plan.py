@@ -21,9 +21,9 @@ TOILET = "toilet"
 TOILET_VISITS = (2, 5)  # visits per awake day, inclusive
 TOILET_MIN, TOILET_MAX = MIN_BLOCK, 6  # visit length in minutes, inclusive: no shorter than a block
 # Blocks a toilet visit never splits: sleeps and the bath, the wake-up and wind-down bookends, fixed
-# rest, and meals (a meal is one sitting).
+# rest, meals (a meal is one sitting) and cooking.
 _NOT_HOST = frozenset({"sleep", "away", "bath", TOILET, "wake_up", "wind_down", "rest",
-                       "breakfast", "lunch", "dinner"})
+                       "breakfast", "lunch", "dinner", "cook"})
 
 
 @dataclass(frozen=True)

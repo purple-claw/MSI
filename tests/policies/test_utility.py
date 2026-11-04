@@ -7,7 +7,7 @@ from gaia.home.archetypes import ARCHETYPE_SPECS, ARCHETYPES
 from gaia.household.personas import Household, make_household
 from gaia.policies import POLICY_ORDER
 from gaia.rng import rng_for
-from gaia.schema.events import EventKind
+from gaia.schema.events import EventKind, Source
 from gaia.world.calendar import local_midnight_utc_ms
 from gaia.world.cities import CITIES
 
@@ -87,6 +87,40 @@ def test_geyser_before_bath():
     on_label = _label(run, next(e for e in run.events if e.kind == EventKind.command and e.load_id == geyser
                                 and e.value == 1.0))
     assert on_label.intent == "hygiene" and on_label.person_id == run.household.members[0].person_id
+
+
+def _sleep_until_the_bath_rows():
+    return [("bedroom_1", "sleep")] * 600 + [("bathroom_1", "bath")] * 20 + [("living", "relax")] * 820
+
+
+def test_geyser_on_before_a_bath_by_its_own_timer_when_nobody_is_awake_at_home():
+    run, manifest = _run([_sleep_until_the_bath_rows()], changes={0: {"forgetfulness": 0.0, "notice_rate": 0.0}})
+    geyser = _load(manifest, "water.geyser", "h1:bathroom_1")
+    ev = next(e for e in run.events if e.kind == EventKind.command and e.load_id == geyser and e.value == 1.0)
+    assert 569 <= (ev.ts_utc - START) / MIN <= 586
+    lb = _label(run, ev)
+    assert lb.person_id is None and lb.intent == "hygiene" and lb.trigger == "timer"
+    assert ev.source == Source.schedule
+
+
+def test_geyser_on_before_a_bath_by_the_awake_member_at_home():
+    rows = [_sleep_until_the_bath_rows(), [("living", "relax")] * 1440]
+    run, manifest = _run(rows, changes={0: {"forgetfulness": 0.0, "notice_rate": 0.0}, 1: {"notice_rate": 0.0}})
+    geyser = _load(manifest, "water.geyser", "h1:bathroom_1")
+    ev = next(e for e in run.events if e.kind == EventKind.command and e.load_id == geyser and e.value == 1.0)
+    lb = _label(run, ev)
+    assert lb.person_id == run.household.members[1].person_id
+    assert lb.activity == "relax" and lb.intent == "hygiene" and lb.trigger == "schedule"
+
+
+def test_shared_geyser_stays_on_while_another_bath_window_is_pending():
+    # Two baths in one bathroom: the second's lead (595-610) starts before the first bath ends (620).
+    rows = [("bedroom_1", "sleep")] * 360 + [("living", "relax")] * 240 + [("bathroom_1", "bath")] * 20 \
+        + [("bathroom_1", "relax")] * 5 + [("bathroom_1", "bath")] * 20 + [("living", "relax")] * 795
+    run, manifest = _run([rows], changes={0: {"forgetfulness": 0.0, "notice_rate": 0.0}})
+    geyser = _load(manifest, "water.geyser", "h1:bathroom_1")
+    offs = [m for m, v in _power(run, geyser) if v == 0.0]
+    assert len(offs) == 1 and 644 <= offs[0] <= 647, offs
 
 
 def test_geyser_overrun_waste():

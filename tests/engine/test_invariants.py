@@ -10,6 +10,9 @@ from gaia.engine.timeline import MINUTES_PER_DAY
 from gaia.registry.registry import get_load_class
 from gaia.schema.events import EventKind
 from gaia.world.calendar import local_midnight_utc_ms
+from gaia.world.cities import CITIES
+
+MS_PER_MIN = 60_000
 
 ARCHETYPES = ["apartment_1rk", "apartment_1bhk", "apartment_2bhk", "apartment_3bhk", "apartment_4bhk",
               "independent_house", "villa"]
@@ -182,3 +185,25 @@ def test_overrun_waste_starts_after_on_plus_n(archetype, seed):
         n = int(rule.partition(":")[2]) * 60_000
         on_ts = max(ts for ts, value in on_states[w.load_id] if value == 1.0 and ts <= w.start_ts_utc)
         assert w.start_ts_utc >= on_ts + n, (w, on_ts)
+
+
+@pytest.mark.parametrize("archetype", ARCHETYPES)
+@settings(max_examples=10, deadline=None)
+@given(seed=SEEDS)
+def test_labelled_person_is_awake_at_home_and_doing_that_activity(archetype, seed):
+    """Every label that names a person refers to someone awake and at home at the command's minute,
+    doing the activity the label gives."""
+    spec = _spec(seed, archetype)
+    result = simulate_home(spec)
+    manifest, household, rooms, acts, act_names = _build_grids(spec)
+    start_ms = local_midnight_utc_ms(spec.start_date, CITIES[spec.city].tz_offset_min)
+    index_of = {m.person_id: i for i, m in enumerate(household.members)}
+    events = {e.event_id: e for e in result.events}
+    for lb in result.labels:
+        if lb.person_id is None:
+            continue
+        minute = min((events[lb.event_id].ts_utc - start_ms) // MS_PER_MIN, len(acts[0]) - 1)
+        i = index_of[lb.person_id]
+        assert rooms[i][minute] >= 0, ("away", lb)
+        assert act_names[acts[i][minute]] != "sleep", ("asleep", lb)
+        assert lb.activity == act_names[acts[i][minute]], ("activity", lb)

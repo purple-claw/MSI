@@ -55,7 +55,6 @@ RELAX_MAIN, RELAX_ACCENT = 0.7, 0.5
 WAKE_MAIN = 0.5
 EPS = 1e-9
 
-_SLEEP = "sleep"
 _NONE = "none"
 _NIGHT = "night"
 _DECOR = "decor"
@@ -100,11 +99,17 @@ class Lighting:
         self._cct_last: dict[str, int] = {}  # load id -> minute of its last cct command
         self._bright: dict[str, list] = {}  # room id -> [bright minutes with an occupant, drawn]
         self._last_pass: int | None = None
+        self._open_last_minute = False  # some waste interval was open at the previous tick
         self._emitted: set[tuple[str, str]] = set()
 
     def tick(self, ctx: TickContext, rng: np.random.Generator) -> list[Intent]:
         self._bind(ctx)
-        self._reconcile(ctx)
+        pairs = ctx.open_waste()
+        # A notice switch-off happens while its load's waste is open, so the mirror needs a look on
+        # the minute the waste was open, the next minute, and any minute someone or something changed.
+        if ctx.changed or pairs or self._open_last_minute:
+            self._reconcile(ctx)
+        self._open_last_minute = bool(pairs)
         self._emitted = set()
         out: list[Intent] = []
         people = ctx.people
@@ -127,6 +132,8 @@ class Lighting:
 
     def _reconcile(self, ctx) -> None:
         """Forget lights that another policy switched off (a notice): the mirror follows the device."""
+        if not self._on:
+            return
         for lid in tuple(self._on):
             if ctx.devices.is_on(lid):
                 continue
@@ -149,8 +156,10 @@ class Lighting:
             return  # a later awake leaver in the same minute decides the exit
         if forgets(person.persona, rng):
             return  # every lit circuit stays on; waste tracking notices
+        actor = None if person.room_id is None or person.asleep else person  # away or asleep: the system
         for load in self._room_loads[room]:
-            self._power(ctx, load, False, person.person_id, person.activity, "energy_saving",
+            self._power(ctx, load, False, None if actor is None else actor.person_id,
+                        _NONE if actor is None else actor.activity, "energy_saving",
                         "room_exit", "turn_off", None, out)
 
     def _fall_asleep(self, ctx, people, i, rng, out: list[Intent]) -> None:
@@ -158,9 +167,8 @@ class Lighting:
         bed = person.room_id
         others_awake = [q for j, q in enumerate(people) if j != i and not q.asleep]
         if bed is not None and bed in self._lit_rooms and not any(q.room_id == bed for q in others_awake):
-            for load in self._room_loads[bed]:
-                self._power(ctx, load, False, person.person_id, _SLEEP, "illumination", "sleep",
-                            "turn_off", None, out)
+            for load in self._room_loads[bed]:  # the sleeper is asleep: the system switches it off
+                self._power(ctx, load, False, None, _NONE, "illumination", "sleep", "turn_off", None, out)
         if others_awake:
             return
         for room_id in self._light_rooms:
@@ -168,7 +176,7 @@ class Lighting:
                 continue
             if rng.random() < CLEANUP_P:
                 for load in self._room_loads[room_id]:
-                    self._power(ctx, load, False, person.person_id, _SLEEP, "cleanup",
+                    self._power(ctx, load, False, None, _NONE, "cleanup",
                                 "last_to_sleep", "turn_off", Source.app, out)
 
     def _activity_change(self, ctx, person: PersonNow, out: list[Intent]) -> None:

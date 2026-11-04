@@ -66,6 +66,13 @@ THEATRE_SOURCE = "hdmi1"
 EPS = 1e-9
 _NO_ONE = (None, "none", "timer")  # the actor of a timer event: nobody, the system
 
+
+def _doer(person: PersonNow, trigger: str) -> "_Who":
+    """The person who did it, or nobody once they have left the home or fallen asleep."""
+    if person.room_id is None or person.asleep:
+        return (None, "none", trigger)
+    return (person.person_id, person.activity, trigger)
+
 # A cause for one command: (person id or None, activity label, trigger).
 _Who = tuple[str | None, str, str]
 
@@ -78,7 +85,6 @@ class _TvSession:
     since: int  # minute the session turned on
     forgotten: bool = False
     resume_at: int | None = None  # minute a pause ends
-    paused_by: _Who | None = None  # who paused it, so the resume is attributed to them
     off_at: int | None = None  # minute a forgotten TV goes off
 
 
@@ -149,6 +155,8 @@ class Media:
         """Drop sessions and music whose set was switched off outside this policy (a notice). A
         stale session would otherwise pause, resume or time out a TV that is off, and the actuator
         would power it back on."""
+        if not self._sessions and not self._music:
+            return
         for load_id in [k for k in self._sessions if not ctx.devices.is_on(k)]:
             del self._sessions[load_id]
         for room in [r for r, audio in self._music.items() if not ctx.devices.is_on(audio.load_id)]:
@@ -178,7 +186,7 @@ class Media:
                   and person.room_id is not None):
                 session = self._session_in(person.room_id)
                 if session is not None and not session.forgotten and not self._watching(ctx, person):
-                    self._tv_off(ctx, session, (person.person_id, person.activity, "activity_end"), out)
+                    self._tv_off(ctx, session, _doer(person, "activity_end"), out)
 
     def _tv_left(self, ctx: TickContext, people: tuple[PersonNow, ...], i: int, rng,
                  out: list[Intent]) -> None:
@@ -195,7 +203,7 @@ class Media:
             session.forgotten = True
             session.off_at = ctx.minute + int(rng.integers(FORGET_OFF_MIN, FORGET_OFF_MAX + 1))
             return
-        self._tv_off(ctx, session, (person.person_id, person.activity, "room_exit"), out)
+        self._tv_off(ctx, session, _doer(person, "room_exit"), out)
 
     def _music_ends(self, ctx: TickContext, moves: dict[str, str], out: list[Intent]) -> None:
         candidates: dict[str, PersonNow] = {}  # room id the person left or was in -> the person
@@ -211,7 +219,7 @@ class Media:
                 continue
             del self._music[room]
             trigger = "room_exit" if person.room_id != room else "activity_end"
-            who = (person.person_id, person.activity, trigger)
+            who = _doer(person, trigger)
             self._change(ctx, audio, "playback", "stopped", who, out)
             self._change(ctx, audio, "power", 0.0, who, out)
 
@@ -277,7 +285,6 @@ class Media:
             head = watchers[0]
             who = (head.person_id, head.activity, "timer")
             session.resume_at = ctx.minute + int(rng.integers(PAUSE_MIN, PAUSE_MAX + 1))
-            session.paused_by = who
             self._change(ctx, session.tv, "playback", "paused", who, out)
 
     def _timers(self, ctx: TickContext, out: list[Intent]) -> None:
@@ -286,7 +293,7 @@ class Media:
                 self._tv_off(ctx, session, _NO_ONE, out, ENERGY_SAVING)  # no resume: one playback intent
             elif session.resume_at is not None and ctx.minute >= session.resume_at:
                 session.resume_at = None
-                self._change(ctx, session.tv, "playback", "playing", session.paused_by or _NO_ONE, out)
+                self._change(ctx, session.tv, "playback", "playing", _NO_ONE, out)  # the pause timer
 
     def _session_in(self, room_id: str | None) -> _TvSession | None:
         if room_id is None:

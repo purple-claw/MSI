@@ -5,7 +5,11 @@ machine. Every intent has intent utility.
   run), on at start - lead minutes when the day's heat index is below GEYSER_HEAT or the persona
   has hot_water_always. The lead is drawn per bath in [15, 30], centred on persona
   geyser_lead_min. Off at the bath's end, unless the member forgets (p = forgetfulness): then it
-  stays on, and the waste tracker's overrun:60 rule records it.
+  stays on, and the waste tracker's overrun:60 rule records it. A shared geyser stays on while
+  another bath window (lead or bath) of the same geyser is pending.
+  Whoever switches the geyser on or off at that minute is the first awake member at home in
+  household order (their activity and their own source). With nobody awake at home, the geyser's
+  built-in timer does it: no person, source schedule, trigger timer.
 - Pump (the first water.pump in the home): a run in 06:00-08:00 every day and, with p 0.4, one in
   18:00-20:00. Each run lasts 20-40 minutes. Actor: the system.
 - Chimney (kitchen.chimney, in the room where someone starts cooking): on at speed 2 or 3 when
@@ -15,7 +19,8 @@ machine. Every intent has intent utility.
 - Washing machine: 2-4 runs in each week. The week is planned on Monday 00:00, or on the first
   day of the run for the rest of its week. A run starts 09:00-10:59 on its planned day, by the
   homemaker if at home and awake, else (weekends and festivals only) by the first awake member at
-  home. Runs last 60-90 minutes.
+  home. A start with nobody to do it is retried each minute until 13:00 the same day. Runs last
+  60-90 minutes.
 
 Each intent checks the device state first: a load already in the wanted state gets nothing, and a
 load another policy switched off is switched on only by its own schedule or cook. Scheduled events
@@ -30,6 +35,7 @@ from gaia.engine.actuator import Intent
 from gaia.engine.context import PersonNow, TickContext
 from gaia.home.manifest import HomeManifest, Load
 from gaia.household.personas import Persona
+from gaia.schema.events import Source
 from gaia.world.calendar import DayType
 from gaia.world.season import heat_index
 
@@ -54,12 +60,14 @@ PUMP_EVENING_P = 0.4
 PUMP_RUN = (20, 40)  # minutes, inclusive
 WASH_RUNS_WEEK = (2, 4)
 WASH_START = (540, 659)  # 09:00-10:59
+WASH_DEADLINE = 780  # a missed washer start is retried until 13:00
 WASH_RUN = (60, 90)
 CHIMNEY_SPEED = (2, 3)
 CHIMNEY_OFF_AFTER = (0, 5)
 RO_RUN = (10, 20)
 
 _Heap = list[tuple[int, int, str, tuple]]  # (minute, sequence, kind, payload)
+_Window = tuple[int, int, bool]  # a geyser window: (on minute, end minute, forgotten)
 
 
 def _draw(rng: np.random.Generator, lo: int, hi: int) -> int:
@@ -82,6 +90,7 @@ class Utility:
         self._personas: dict[str, Persona] = {}
         self._prev_act: dict[str, str] = {}  # person id -> activity at the last changed minute
         self._ro_until: dict[str, int] = {}  # RO load id -> minute its current run ends
+        self._windows: dict[str, list[_Window]] = {}  # geyser load id -> its bath windows
         self._week_planned = False
         self._heap: _Heap = []
         self._seq = 0
@@ -128,7 +137,8 @@ class Utility:
         for weekday in sorted(int(d) for d in rng.choice(days, size=runs, replace=False)):
             day_start = ctx.minute + (weekday - today) * MINUTES_PER_DAY
             start = day_start + _draw(rng, *WASH_START)
-            self._push(start, "wash_start", (self._washer.load_id, _draw(rng, *WASH_RUN)))
+            self._push(start, "wash_start",
+                       (self._washer.load_id, _draw(rng, *WASH_RUN), day_start + WASH_DEADLINE))
 
     def _schedule_baths(self, ctx: TickContext, rng: np.random.Generator) -> None:
         """The geyser for each planned bath: on ahead of it, off after it unless forgotten."""
@@ -141,12 +151,13 @@ class Utility:
             if not (persona.hot_water_always or heat < GEYSER_HEAT):
                 continue
             lead = int(round(np.clip(rng.normal(persona.geyser_lead_min, LEAD_SD), *GEYSER_LEAD)))
-            forgets = rng.random() < persona.forgetfulness
-            self._push(max(0, span.start - lead), "power",
-                       (geyser.load_id, True, span.person_id, BATH, HYGIENE, "schedule"))
+            forgets = bool(rng.random() < persona.forgetfulness)
+            windows = self._windows.setdefault(geyser.load_id, [])
+            on_min = max(0, span.start - lead)
+            windows.append((on_min, span.end, forgets))
+            self._push(on_min, "geyser_on", (geyser.load_id, len(windows) - 1))
             if not forgets:
-                self._push(span.end, "power",
-                           (geyser.load_id, False, span.person_id, BATH, HYGIENE, "activity_end"))
+                self._push(span.end, "geyser_off", (geyser.load_id, len(windows) - 1))
 
     # --- events ---------------------------------------------------------------
 
@@ -156,6 +167,15 @@ class Utility:
             if kind == "power":
                 lid, on, person_id, activity, intent, trigger = payload
                 self._power(ctx, self._loads[lid], on, person_id, activity, intent, trigger, out)
+            elif kind == "geyser_on":
+                self._geyser_switch(ctx, payload[0], True, out)
+            elif kind == "geyser_off":
+                lid, idx = payload
+                on_min, end, _ = self._windows[lid][idx]
+                # another bath window of this geyser still pending (lead or bath): it stays on
+                if not any(i != idx and start <= ctx.minute < stop
+                           for i, (start, stop, _) in enumerate(self._windows[lid])):
+                    self._geyser_switch(ctx, lid, False, out)
             elif kind == "chimney_off":
                 lid, room_id = payload
                 if not self._cooking(ctx, room_id):
@@ -169,12 +189,32 @@ class Utility:
                 self._wash_start(ctx, payload, out)
 
     def _wash_start(self, ctx: TickContext, payload: tuple, out: list[Intent]) -> None:
-        lid, run = payload
+        lid, run, deadline = payload
+        if ctx.devices.is_on(lid):
+            return
         starter = self._washer_starter(ctx)
-        if starter is None or ctx.devices.is_on(lid):
+        if starter is None:
+            if ctx.minute < deadline:  # nobody to start it: try again next minute, until the deadline
+                self._push(ctx.minute + 1, "wash_start", payload)
             return
         self._power(ctx, self._loads[lid], True, starter.person_id, starter.activity, UTILITY, "schedule", out)
         self._push(ctx.minute + run, "power", (lid, False, None, NONE_ACTIVITY, UTILITY, "timer"))
+
+    def _geyser_switch(self, ctx: TickContext, lid: str, on: bool, out: list[Intent]) -> None:
+        """Switch the geyser by its awake member at home (the first in household order), or by its
+        own timer when nobody is awake at home."""
+        load = self._loads[lid]
+        actor = self._awake_actor(ctx)
+        if actor is None:
+            self._power(ctx, load, on, None, NONE_ACTIVITY, HYGIENE, "timer", out, source=Source.schedule)
+        else:
+            self._power(ctx, load, on, actor.person_id, actor.activity, HYGIENE, "schedule", out)
+
+    def _awake_actor(self, ctx: TickContext) -> PersonNow | None:
+        for person in ctx.people:
+            if person.room_id is not None and not person.asleep:
+                return person
+        return None
 
     def _washer_starter(self, ctx: TickContext) -> PersonNow | None:
         awake = [p for p in ctx.people if p.room_id is not None and not p.asleep]
@@ -234,13 +274,13 @@ class Utility:
     # --- intents ----------------------------------------------------------------
 
     def _power(self, ctx: TickContext, load: Load, on: bool, person_id: str | None, activity: str,
-               intent: str, trigger: str, out: list[Intent]) -> None:
+               intent: str, trigger: str, out: list[Intent], source: Source | None = None) -> None:
         if ctx.devices.is_on(load.load_id) == on or not self._claim(load.load_id, "power"):
             return
         out.append(Intent(
             load_id=load.load_id, capability="power", value=1.0 if on else 0.0, person_id=person_id,
             activity=activity, intent=intent, trigger=trigger,
-            device_action="turn_on" if on else "turn_off", policy=self.name, source=None,
+            device_action="turn_on" if on else "turn_off", policy=self.name, source=source,
         ))
 
     def _claim(self, load_id: str, capability: str) -> bool:

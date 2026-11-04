@@ -98,6 +98,18 @@ def test_notice_switches_off_a_wasted_light_outside_the_room_with_wall_source():
         assert lb.trigger == "notice" and lb.person_id == run.household.members[1].person_id
 
 
+def test_waste_interval_ends_at_the_notice_off_state_timestamp():
+    a = _evening_rows()
+    b = [("bedroom_2", "relax")] * 1440
+    run, manifest = _run([a, b], changes={0: {"forgetfulness": 1.0}, 1: {"notice_rate": 1.0}})
+    notices, _ = _notice_events(run)
+    lights = _living_lights(manifest)
+    first = next(e for e in notices if e.load_id in lights)
+    state = next(e for e in run.events if e.kind == EventKind.state and e.ref_id == first.event_id)
+    ends = [w.end_ts_utc for w in run.gt_waste if w.load_id == first.load_id]
+    assert state.ts_utc in ends
+
+
 def test_a_light_switched_off_by_notice_is_switched_on_again_by_its_policy():
     a = _evening_rows()
     b = [("bedroom_2", "relax")] * 1440
