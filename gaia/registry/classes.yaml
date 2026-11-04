@@ -534,7 +534,7 @@ sensor.motion:
   power_w: {"on": 0}
   power_source: assumption
   waste_rule: none
-  rooms: [living, bedroom, kitchen, bathroom, passage]
+  rooms: [balcony, bathroom, dining, dressing, garden, home_theatre, kitchen, living, lobby, passage, pooja, staircase, study, terrace, utility]
 
 sensor.presence:
   domain: sensing
@@ -554,7 +554,7 @@ sensor.contact:
   power_w: {"on": 0}
   power_source: assumption
   waste_rule: none
-  rooms: [entrance, balcony, bedroom]
+  rooms: [living, lobby]
 
 sensor.temperature:
   domain: sensing
@@ -564,7 +564,7 @@ sensor.temperature:
   power_w: {"on": 0}
   power_source: assumption
   waste_rule: none
-  rooms: [living, bedroom, kitchen]
+  rooms: [living, bedroom]
 
 sensor.humidity:
   domain: sensing
@@ -575,7 +575,7 @@ sensor.humidity:
   power_w: {"on": 0}
   power_source: assumption
   waste_rule: none
-  rooms: [living, bedroom, bathroom]
+  rooms: [bedroom]
 
 sensor.lux:
   domain: sensing
@@ -585,7 +585,7 @@ sensor.lux:
   power_w: {"on": 0}
   power_source: assumption
   waste_rule: none
-  rooms: [living, balcony]
+  rooms: [living]
 
 sensor.co2:
   domain: sensing
@@ -616,7 +616,7 @@ meter.energy:
   power_w: {"on": 0}
   power_source: assumption
   waste_rule: none
-  rooms: [entrance]
+  rooms: [living, utility]
 
 # ---------- Keypads ----------
 # assumption: capability ranges and power_w unless power_source is a URL

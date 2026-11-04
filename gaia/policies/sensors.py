@@ -26,6 +26,7 @@ switch-offs notice makes later in the same minute.
 """
 
 from collections import deque
+from datetime import date
 
 import numpy as np
 
@@ -74,7 +75,7 @@ class Sensors:
         self._power: tuple[tuple[str, float, float], ...] = ()  # (load id, on W, standby W)
         self._meter: Load | None = None
         self._heat = 0.0
-        self._heat_day = None
+        self._heat_day: date | None = None
 
     def tick(self, ctx: TickContext, rng: np.random.Generator) -> list[SensorReading]:
         self._bind(ctx)
@@ -103,12 +104,19 @@ class Sensors:
         m = ctx.minute
         if not self._motion:
             return
+        # Minute 0 is not a changed minute, so an occupant already in a room at the start gets no
+        # motion 1 until something changes there (presence still reports them at minute 0).
         if not ctx.changed and (self._motion_due is None or m < self._motion_due):
             return  # quiet minute with nothing due: no motion room needs a look
         entered = {room_id for person, room_id in ctx.entered() if not person.asleep}
+        # Someone awake in a room at m-1 was there at the last awake minute, whatever happened at m
+        # (left, fell asleep). Rooms are only examined on some minutes, so this keeps the hold exact.
+        was_awake = {p.prev_room_id for p in ctx.people if p.prev_room_id is not None and not p.prev_asleep}
         due: int | None = None
         for room_id, ld in self._motion.items():
             on = self._motion_on.get(room_id, False)
+            if room_id in was_awake:
+                self._last_awake[room_id] = m - 1
             if ctx.any_awake_in(room_id):
                 self._last_awake[room_id] = m
                 if not on or room_id in entered or m >= self._retrigger.get(room_id, m):

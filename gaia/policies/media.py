@@ -348,8 +348,7 @@ class Media:
             self._theatre_end = None
             who = next((p for p in ctx.people if p.person_id == owner), None)
             # An absent or asleep owner leaves the theatre to the system's timer, the same way.
-            asleep = who is None or who.asleep
-            self._theatre_off(ctx, _NO_ONE if asleep else _doer(who, "schedule"), out)
+            self._theatre_off(ctx, _NO_ONE if who is None or who.asleep else _doer(who, "schedule"), out)
         if self._theatre_plan is not None and ctx.minute >= self._theatre_plan[0]:
             start, length = self._theatre_plan
             self._theatre_plan = None
