@@ -17,12 +17,13 @@ PERSON = PERSONAS["working_professional"]
 def _manifest() -> HomeManifest:
     return HomeManifest(
         home_id="h1", archetype="test", city="pune",
+        tier="premium", lighting_system="knx_dali",
         rooms=(Room("r1", "living", 1.0),),
         adjacency={"r1": ()},
         loads=(
-            Load("l_tun", "r1", "light.tunable", Protocol.matter, True),
-            Load("l_curtain", "r1", "shade.curtain", Protocol.zigbee, False),
-            Load("s_temp", "r1", "sensor.temperature", Protocol.zigbee, False),
+            Load("l_tun", "r1", "light.tunable", Protocol.matter, "matter_wifi", "main", "downlight"),
+            Load("l_curtain", "r1", "shade.curtain", Protocol.zigbee, "zigbee_hue", "none"),
+            Load("s_temp", "r1", "sensor.temperature", Protocol.zigbee, "zigbee_hue", "none"),
         ),
     )
 

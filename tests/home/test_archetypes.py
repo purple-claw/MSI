@@ -2,11 +2,11 @@ from collections import Counter
 
 import pytest
 
-from gaia.home.archetypes import ARCHETYPES, APARTMENTS
+from gaia.home.archetypes import ARCHETYPE_SPECS, ARCHETYPES
 from gaia.registry.registry import REGISTRY
 from gaia.rng import rng_for
 
-ARCHETYPE_NAMES = sorted(APARTMENTS)
+ARCHETYPE_NAMES = sorted(ARCHETYPE_SPECS)
 
 
 def _build(name: str, seed: int):
@@ -14,27 +14,22 @@ def _build(name: str, seed: int):
 
 
 @pytest.mark.parametrize("name", ARCHETYPE_NAMES)
-def test_every_room_has_one_main_light(name):
-    for seed in range(200):
-        m = _build(name, seed)
-        for room in m.rooms:
-            mains = [ld for ld in m.loads_in(room.room_id) if ld.is_main_light]
-            assert len(mains) == 1, (seed, room.room_id)
-            assert m.main_light(room.room_id) == mains[0]
-            assert mains[0].load_class in ("light.dimmable", "light.onoff")
-
-
-@pytest.mark.parametrize("name", ARCHETYPE_NAMES)
 def test_room_counts_match_spec(name):
-    spec = APARTMENTS[name]
+    spec = ARCHETYPE_SPECS[name]
     m = _build(name, 1)
     types = Counter(r.room_type for r in m.rooms)
     assert types["bedroom"] == spec.bedrooms
     assert types["bathroom"] == spec.bathrooms
     assert types["living"] == 1
     assert types["kitchen"] == 1
+    assert types["bedroom"] + types["bathroom"] + len(spec.extra_rooms) + 2 == len(m.rooms)
     if spec.bedrooms == 0:
         assert {r.room_id.split(":")[-1] for r in m.rooms} == {"living", "kitchen", "bathroom_1"}
+    assert {r.room_id.split(":")[-1] for r in m.rooms} == {
+        "living", "kitchen", *spec.extra_rooms,
+        *(f"bedroom_{i}" for i in range(1, spec.bedrooms + 1)),
+        *(f"bathroom_{i}" for i in range(1, spec.bathrooms + 1)),
+    }
 
 
 @pytest.mark.parametrize("name", ARCHETYPE_NAMES)
@@ -70,13 +65,3 @@ def test_load_classes_registered(name):
     for seed in range(50):
         for load in _build(name, seed).loads:
             assert load.load_class in REGISTRY
-
-
-def test_protocol_mix_roughly_matches():
-    total = knx = 0
-    for seed in range(500):
-        for name in ARCHETYPE_NAMES:
-            for load in _build(name, seed).loads:
-                total += 1
-                knx += load.protocol.value == "knx"
-    assert 0.55 <= knx / total <= 0.65

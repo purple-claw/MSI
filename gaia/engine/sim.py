@@ -26,7 +26,7 @@ from gaia.engine.context import (
 )
 from gaia.engine.timeline import MINUTES_PER_DAY, SLEEP, fill_grid, stitch_days
 from gaia.engine.waste import GtWaste, WasteTracker
-from gaia.home.archetypes import APARTMENTS, ARCHETYPES
+from gaia.home.archetypes import ARCHETYPE_SPECS, ARCHETYPES
 from gaia.home.manifest import HomeManifest
 from gaia.household.personas import Household, Member, make_household
 from gaia.labels.model import Label
@@ -185,8 +185,8 @@ class _Run:
 def _build_grids(spec: HomeSpec) -> tuple[HomeManifest, Household, list[list[int]], list[list[int]], list[str]]:
     """Build the manifest, household and per-person minute grids (rooms, activity codes, names)."""
     manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
-    apartment = APARTMENTS[spec.archetype]
-    household = make_household(manifest, apartment, rng_for(spec.home_seed, "household"))
+    archetype = ARCHETYPE_SPECS[spec.archetype]
+    household = make_household(manifest, archetype, rng_for(spec.home_seed, "household"))
     total = spec.days * MINUTES_PER_DAY
     room_index = {room.room_id: i for i, room in enumerate(manifest.rooms)}
 

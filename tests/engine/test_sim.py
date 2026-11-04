@@ -6,7 +6,7 @@ import pytest
 from gaia.engine.sim import HomeSpec, _Run, simulate_home
 from gaia.engine.actuator import Intent
 from gaia.policies import POLICY_ORDER, LightingBasic
-from gaia.home.archetypes import APARTMENTS, ARCHETYPES
+from gaia.home.archetypes import ARCHETYPE_SPECS, ARCHETYPES
 from gaia.household.personas import Household, make_household
 from gaia.rng import rng_for
 from gaia.schema.events import EventKind
@@ -40,7 +40,7 @@ def test_last_awake_leaver_never_leaves_light_silently_on():
     spec = HomeSpec(home_id="h1", home_seed=3, city="hyderabad", archetype="apartment_2bhk",
                     start_date=date(2026, 11, 2), days=1, festivals=frozenset())
     manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
-    household = make_household(manifest, APARTMENTS[spec.archetype], rng_for(spec.home_seed, "household"))
+    household = make_household(manifest, ARCHETYPE_SPECS[spec.archetype], rng_for(spec.home_seed, "household"))
     a, b = household.members[0], household.members[1]
     assert a.bedroom == b.bedroom == "bedroom_1"
     index = {r.room_id: i for i, r in enumerate(manifest.rooms)}
@@ -89,7 +89,7 @@ def test_only_the_last_awake_leaver_decides_the_exit():
     spec = HomeSpec(home_id="h1", home_seed=3, city="hyderabad", archetype="apartment_2bhk",
                     start_date=date(2026, 11, 2), days=1, festivals=frozenset())
     manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
-    household = make_household(manifest, APARTMENTS[spec.archetype], rng_for(spec.home_seed, "household"))
+    household = make_household(manifest, ARCHETYPE_SPECS[spec.archetype], rng_for(spec.home_seed, "household"))
     a, b = household.members[0], household.members[1]
     a = replace(a, persona=replace(a.persona, forgetfulness=0.0))
     b = replace(b, persona=replace(b.persona, forgetfulness=1.0))

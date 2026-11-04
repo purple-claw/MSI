@@ -2,7 +2,7 @@ from datetime import date
 
 from gaia.engine.context import TickContext
 from gaia.engine.sim import HomeSpec, _build_grids, _Run, simulate_home
-from gaia.home.archetypes import APARTMENTS, ARCHETYPES
+from gaia.home.archetypes import ARCHETYPE_SPECS, ARCHETYPES
 from gaia.household.personas import Household, make_household
 from gaia.rng import rng_for
 from gaia.world.calendar import local_midnight_utc_ms
@@ -17,7 +17,7 @@ def _scenario(rows):
     spec = HomeSpec(home_id="h1", home_seed=4, city="hyderabad", archetype="apartment_2bhk",
                     start_date=date(2026, 11, 2), days=1, festivals=frozenset())
     manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
-    household = make_household(manifest, APARTMENTS[spec.archetype], rng_for(spec.home_seed, "household"))
+    household = make_household(manifest, ARCHETYPE_SPECS[spec.archetype], rng_for(spec.home_seed, "household"))
     index = {r.room_id: i for i, r in enumerate(manifest.rooms)}
     places = [index[room] if room else -1 for room, _ in rows]
     codes = [code for _, code in rows]

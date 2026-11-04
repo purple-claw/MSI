@@ -11,14 +11,15 @@ from gaia.schema.events import Protocol
 
 def _manifest(*loads: Load) -> HomeManifest:
     return HomeManifest(
-        home_id="h1", archetype="test", city="pune", rooms=(),
+        home_id="h1", archetype="test", city="pune", tier="basic", lighting_system="matter_wifi",
+        rooms=(),
         adjacency={}, loads=tuple(loads),
     )
 
 
 def _load(load_id: str, load_class: str) -> Load:
     return Load(load_id=load_id, room_id="living", load_class=load_class,
-                protocol=Protocol.matter, is_main_light=False)
+                protocol=Protocol.matter, system="matter_wifi", circuit="none")
 
 
 def test_clamp_cct():

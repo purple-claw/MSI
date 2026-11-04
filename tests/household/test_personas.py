@@ -2,16 +2,16 @@ from dataclasses import replace
 
 import pytest
 
-from gaia.home.archetypes import APARTMENTS, ARCHETYPES
+from gaia.home.archetypes import ARCHETYPE_SPECS, ARCHETYPES
 from gaia.household.personas import PERSONAS, make_household
 from gaia.rng import rng_for
 
-ARCHETYPE_NAMES = sorted(APARTMENTS)
+ARCHETYPE_NAMES = sorted(ARCHETYPE_SPECS)
 
 
 def _home(name: str, seed: int):
     manifest = ARCHETYPES[name]("h1", "Mumbai", rng_for(seed, "home"))
-    household = make_household(manifest, APARTMENTS[name], rng_for(seed, "household"))
+    household = make_household(manifest, ARCHETYPE_SPECS[name], rng_for(seed, "household"))
     return manifest, household
 
 
@@ -31,7 +31,7 @@ def test_first_member_is_working_professional():
 
 @pytest.mark.parametrize("name", ARCHETYPE_NAMES)
 def test_household_fits_home(name):
-    spec = APARTMENTS[name]
+    spec = ARCHETYPE_SPECS[name]
     lo, hi = spec.household_size
     for seed in range(200):
         manifest, household = _home(name, seed)

@@ -1,1 +1,1 @@
-"""Home layer: home manifests and apartment archetypes (1RK to 4BHK)."""
+"""Home layer: home manifests, room inventory and archetypes (1RK to villa)."""

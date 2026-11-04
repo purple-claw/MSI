@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from gaia.home.archetypes import ApartmentSpec
+from gaia.home.archetypes import ArchetypeSpec
 from gaia.home.manifest import HomeManifest
 
 
@@ -74,7 +74,7 @@ def _bedroom_for(index: int, bedrooms: int) -> str:
     return f"bedroom_{overflow[(index - bedrooms - 1) % len(overflow)]}"
 
 
-def make_household(manifest: HomeManifest, spec: ApartmentSpec, rng: np.random.Generator) -> Household:
+def make_household(manifest: HomeManifest, spec: ArchetypeSpec, rng: np.random.Generator) -> Household:
     lo, hi = spec.household_size
     size = int(rng.integers(lo, hi + 1))
     members: list[Member] = []

@@ -10,7 +10,8 @@ from gaia.engine.timeline import MINUTES_PER_DAY
 from gaia.schema.events import EventKind
 from gaia.world.calendar import local_midnight_utc_ms
 
-ARCHETYPES = ["apartment_1rk", "apartment_1bhk", "apartment_2bhk", "apartment_3bhk", "apartment_4bhk"]
+ARCHETYPES = ["apartment_1rk", "apartment_1bhk", "apartment_2bhk", "apartment_3bhk", "apartment_4bhk",
+              "independent_house", "villa"]
 DAYS = 3
 START = date(2026, 11, 2)
 SEEDS = st.integers(0, 10**6)

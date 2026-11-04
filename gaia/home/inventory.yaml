@@ -1,0 +1,210 @@
+# Room inventory v1: which loads each room gets, per home tier. Data only; loaded by
+# gaia/home/inventory.py.
+#
+# tier -> room type -> list of entries, in draw order. Each entry:
+#   class    load class (must be in gaia/registry/classes.yaml)
+#   fixture  fixture type for lights (see FIXTURES in gaia/registry/registry.py), null for non-lights
+#   circuit  main | accent | cove | task | night | decor for lights; none for non-lights
+#   count    [min, max]: how many loads when the entry is present, drawn uniformly
+#   p        presence probability. For circuit main it is a weight: exactly one main entry per
+#            room is chosen with probability p / sum(p) over the room's main entries.
+#
+# Every room type listed here gets exactly one main circuit light. `main` is the room's one
+# switched ambient light (the only circuit lighting_basic switches). Other light circuits are
+# loads that nothing switches yet.
+#
+# Protocol and system per load are assigned in gaia/home/inventory.py, not here.
+# All values are source: assumption until Task 11 calibrates them from ETS.
+
+basic:
+  living:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.5}
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.5}
+    - {class: fan.ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: climate.split_ac, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+    - {class: media.tv, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.stb_dth, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+    - {class: media.streamer, fixture: null, circuit: none, count: [1, 1], p: 0.6}
+    - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.3}
+  kitchen:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.7}
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.3}
+    - {class: kitchen.chimney, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: water.ro_purifier, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.3}
+  bedroom:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.5}
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.5}
+    - {class: fan.ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: climate.split_ac, fixture: null, circuit: none, count: [1, 1], p: 0.6}
+  bathroom:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.5}
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.5}
+    - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: water.geyser, fixture: null, circuit: none, count: [1, 1], p: 0.7}
+
+standard:
+  living:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.5}
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.5}
+    - {class: fan.ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: climate.split_ac, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+    - {class: media.tv, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.stb_dth, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+    - {class: media.streamer, fixture: null, circuit: none, count: [1, 1], p: 0.6}
+    - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.3}
+    - {class: media.soundbar, fixture: null, circuit: none, count: [1, 1], p: 0.2}
+  kitchen:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.6}
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.4}
+    - {class: kitchen.chimney, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: water.ro_purifier, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.3}
+  bedroom:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.5}
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.5}
+    - {class: fan.ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: climate.split_ac, fixture: null, circuit: none, count: [1, 1], p: 0.7}
+  bathroom:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.5}
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.5}
+    - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: water.geyser, fixture: null, circuit: none, count: [1, 1], p: 0.7}
+
+premium:
+  living:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.led_strip, fixture: cove, circuit: cove, count: [1, 1], p: 0.5}
+    - {class: light.dimmable, fixture: profile, circuit: accent, count: [1, 2], p: 0.5}
+    - {class: light.tunable, fixture: downlight, circuit: task, count: [2, 6], p: 0.5}
+    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: climate.split_ac, fixture: null, circuit: none, count: [1, 1], p: 0.6}
+    - {class: media.tv, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.stb_dth, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+    - {class: media.streamer, fixture: null, circuit: none, count: [1, 1], p: 0.6}
+    - {class: media.soundbar, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+    - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.2}
+    - {class: sensor.temperature, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+    - {class: shade.curtain, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+  kitchen:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.6}
+    - {class: light.tunable, fixture: downlight, circuit: main, count: [1, 1], p: 0.4}
+    - {class: kitchen.chimney, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: water.ro_purifier, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.3}
+  bedroom:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.led_strip, fixture: cove, circuit: cove, count: [1, 1], p: 0.5}
+    - {class: light.dimmable, fixture: profile, circuit: accent, count: [1, 2], p: 0.5}
+    - {class: light.tunable, fixture: downlight, circuit: task, count: [2, 4], p: 0.5}
+    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: climate.split_ac, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+    - {class: shade.curtain, fixture: null, circuit: none, count: [1, 1], p: 0.9}
+  bathroom:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.5}
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.5}
+    - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: water.geyser, fixture: null, circuit: none, count: [1, 1], p: 0.7}
+  dining:
+    - {class: light.dimmable, fixture: pendant, circuit: main, count: [1, 1], p: 1.0}
+    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+  pooja:
+    - {class: light.onoff, fixture: accent, circuit: main, count: [1, 1], p: 1.0}
+  balcony:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 1.0}
+    - {class: cctv.camera, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+  passage:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.onoff, fixture: step, circuit: night, count: [2, 4], p: 1.0}
+    - {class: lock.smart, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: doorbell.video, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: sensor.motion, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+  staircase:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.onoff, fixture: step, circuit: night, count: [3, 8], p: 1.0}
+    - {class: sensor.motion, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+
+luxury:
+  living:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.led_strip, fixture: cove, circuit: cove, count: [1, 1], p: 0.6}
+    - {class: light.dimmable, fixture: profile, circuit: accent, count: [1, 3], p: 0.6}
+    - {class: light.tunable, fixture: downlight, circuit: task, count: [4, 8], p: 0.7}
+    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: climate.cassette_ac, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.tv, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.stb_dth, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+    - {class: media.streamer, fixture: null, circuit: none, count: [1, 1], p: 0.6}
+    - {class: media.soundbar, fixture: null, circuit: none, count: [1, 1], p: 0.7}
+    - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.1}
+    - {class: sensor.temperature, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+    - {class: shade.curtain, fixture: null, circuit: none, count: [1, 2], p: 0.9}
+  kitchen:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.6}
+    - {class: light.tunable, fixture: downlight, circuit: main, count: [1, 1], p: 0.4}
+    - {class: kitchen.chimney, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: water.ro_purifier, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.speaker, fixture: null, circuit: none, count: [1, 1], p: 0.3}
+  bedroom:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.led_strip, fixture: cove, circuit: cove, count: [1, 1], p: 0.6}
+    - {class: light.dimmable, fixture: profile, circuit: accent, count: [1, 2], p: 0.6}
+    - {class: light.tunable, fixture: downlight, circuit: task, count: [2, 4], p: 0.7}
+    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: climate.split_ac, fixture: null, circuit: none, count: [1, 1], p: 0.9}
+    - {class: shade.curtain, fixture: null, circuit: none, count: [1, 1], p: 0.9}
+  dining:
+    - {class: light.dimmable, fixture: pendant, circuit: main, count: [1, 1], p: 0.5}
+    - {class: light.tunable, fixture: pendant, circuit: main, count: [1, 1], p: 0.5}
+    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: climate.cassette_ac, fixture: null, circuit: none, count: [1, 1], p: 0.8}
+  pooja:
+    - {class: light.onoff, fixture: accent, circuit: main, count: [1, 1], p: 1.0}
+  home_theatre:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.led_strip, fixture: cove, circuit: cove, count: [1, 1], p: 0.8}
+    - {class: media.projector, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.screen_motorised, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: media.av_receiver, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: shade.curtain, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+  study:
+    - {class: light.tunable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.dimmable, fixture: downlight, circuit: task, count: [1, 2], p: 1.0}
+    - {class: climate.split_ac, fixture: null, circuit: none, count: [1, 1], p: 0.7}
+    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: sensor.presence, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+  bathroom:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 0.5}
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 0.5}
+    - {class: fan.exhaust, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: water.geyser, fixture: null, circuit: none, count: [1, 1], p: 0.7}
+  dressing:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.dimmable, fixture: profile, circuit: accent, count: [1, 2], p: 0.5}
+    - {class: fan.bldc_ceiling, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+  terrace:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.led_strip, fixture: strip, circuit: decor, count: [1, 2], p: 0.5}
+    - {class: cctv.camera, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+  garden:
+    - {class: light.onoff, fixture: landscape, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.onoff, fixture: landscape, circuit: decor, count: [2, 6], p: 1.0}
+  lobby:
+    - {class: light.dimmable, fixture: downlight, circuit: main, count: [1, 1], p: 1.0}
+    - {class: lock.smart, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: doorbell.video, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: gate.motor, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: cctv.camera, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+  staircase:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 1.0}
+    - {class: light.onoff, fixture: step, circuit: night, count: [3, 8], p: 1.0}
+    - {class: sensor.motion, fixture: null, circuit: none, count: [1, 1], p: 0.5}
+  utility:
+    - {class: light.onoff, fixture: bulb, circuit: main, count: [1, 1], p: 1.0}
+    - {class: water.pump, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: laundry.washing_machine, fixture: null, circuit: none, count: [1, 1], p: 1.0}
+    - {class: power.inverter_ups, fixture: null, circuit: none, count: [1, 1], p: 1.0}

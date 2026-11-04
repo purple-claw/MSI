@@ -26,12 +26,13 @@ class _Ctx:
 def _manifest() -> HomeManifest:
     return HomeManifest(
         home_id="h1", archetype="test", city="pune",
+        tier="basic", lighting_system="matter_wifi",
         rooms=(Room("r1", "bedroom", 0.02),),
         adjacency={"r1": ()},
         loads=(
-            Load("l_main", "r1", "light.onoff", Protocol.knx, True),   # unattended
-            Load("l_fan", "r1", "fan.exhaust", Protocol.knx, False),   # overrun:15
-            Load("l_shade", "r1", "shade.curtain", Protocol.knx, False),  # none
+            Load("l_main", "r1", "light.onoff", Protocol.knx, "knx_dali", "main", "bulb"),   # unattended
+            Load("l_fan", "r1", "fan.exhaust", Protocol.knx, "knx_dali", "none"),   # overrun:15
+            Load("l_shade", "r1", "shade.curtain", Protocol.knx, "knx_dali", "none"),  # none
         ),
     )
 
