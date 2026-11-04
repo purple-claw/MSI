@@ -23,6 +23,18 @@ class Persona:
     # dict is unhashable; excluded from hash, still compared for equality.
     tech_affinity: dict[str, float] = field(hash=False)
     light_threshold_lux: float
+    # Lighting preferences (assumption: defaults until calibrated from ETS).
+    cct_pref_offset_k: float = 0.0  # added to the circadian CCT, within +-500 K
+    daylight_off_p: float = 0.6  # chance an awake occupant switches the main light off in daylight
+    dim_pref: float = 1.0  # multiplier on full-brightness levels, within 0.8-1.0
+
+    def __post_init__(self) -> None:
+        if not -500.0 <= self.cct_pref_offset_k <= 500.0:
+            raise ValueError(f"cct_pref_offset_k out of [-500, 500]: {self.cct_pref_offset_k!r}")
+        if not 0.0 <= self.daylight_off_p <= 1.0:
+            raise ValueError(f"daylight_off_p out of [0, 1]: {self.daylight_off_p!r}")
+        if not 0.8 <= self.dim_pref <= 1.0:
+            raise ValueError(f"dim_pref out of [0.8, 1.0]: {self.dim_pref!r}")
 
 
 PERSONAS: dict[str, Persona] = {

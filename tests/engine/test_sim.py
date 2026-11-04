@@ -5,7 +5,7 @@ import pytest
 
 from gaia.engine.sim import HomeSpec, _Run, simulate_home
 from gaia.engine.actuator import Intent
-from gaia.policies import POLICY_ORDER, LightingBasic
+from gaia.policies import POLICY_ORDER, Lighting
 from gaia.home.archetypes import ARCHETYPE_SPECS, ARCHETYPES
 from gaia.household.personas import Household, make_household
 from gaia.rng import rng_for
@@ -173,7 +173,7 @@ def test_policy_stream_isolation():
     lights = {ld.load_id for ld in base.manifest.loads if ld.is_main_light}
     assert any(e.load_id not in lights for e in probed.events)  # the probe really emitted
     assert [e for e in probed.events if e.load_id in lights] == [e for e in base.events if e.load_id in lights]
-    assert [lb for lb in probed.labels if lb.source_ref == "lighting_basic"] == base.labels
+    assert [lb for lb in probed.labels if lb.source_ref == "lighting"] == base.labels
     assert [w for w in probed.gt_waste if w.load_id in lights] == base.gt_waste
 
 
@@ -181,4 +181,4 @@ def test_policy_names_must_be_unique():
     spec = HomeSpec(home_id="h1", home_seed=3, city="hyderabad", archetype="apartment_2bhk",
                     start_date=date(2026, 11, 2), days=1, festivals=frozenset())
     with pytest.raises(ValueError, match="unique"):
-        simulate_home(spec, policy_order=[LightingBasic, LightingBasic])
+        simulate_home(spec, policy_order=[Lighting, Lighting])

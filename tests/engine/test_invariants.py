@@ -51,13 +51,15 @@ def test_every_state_has_command(archetype, seed):
 @settings(max_examples=25, deadline=None)
 @given(seed=SEEDS)
 def test_no_redundant_state(archetype, seed):
-    last: dict[str, float] = {}
+    # Keyed by (load, capability): a dimmable's power state and its level can share a value.
+    last: dict[tuple[str, str], float] = {}
     for e in _run(seed, archetype).events:
         if e.kind != EventKind.state:
             continue
-        if e.load_id in last:
-            assert last[e.load_id] != e.value
-        last[e.load_id] = e.value
+        key = (e.load_id, e.capability)
+        if key in last:
+            assert last[key] != e.value
+        last[key] = e.value
 
 
 @pytest.mark.parametrize("archetype", ARCHETYPES)
@@ -87,8 +89,8 @@ def test_waste_never_overlaps_awake_occupancy(archetype, seed):
     _, _, rooms, acts, _ = _build_grids(spec)
     total = DAYS * MINUTES_PER_DAY
     start = local_midnight_utc_ms(START, 330)
-    room_of_load = {r.manifest.main_light(room.room_id).load_id: i
-                    for i, room in enumerate(r.manifest.rooms)}
+    room_index = {room.room_id: i for i, room in enumerate(r.manifest.rooms)}
+    room_of_load = {ld.load_id: room_index[ld.room_id] for ld in r.manifest.loads}
     for w in r.gt_waste:
         idx = room_of_load[w.load_id]
         lo = (w.start_ts_utc - start) // 60_000
@@ -114,8 +116,12 @@ def test_per_load_states_alternate_and_follow_commands(archetype, seed):
         ts = [s.ts_utc for s in states]
         assert all(a < b for a, b in zip(ts, ts[1:]))
         assert states[0].value == 1.0  # lights start off, so the first state is on
-        assert all(a.value != b.value for a, b in zip(states, states[1:]))
         assert all(s.ts_utc > cmd_ts[s.ref_id] for s in states)
+        by_cap: dict[str, list] = defaultdict(list)
+        for s in states:  # alternation is per capability: power and level may share a value
+            by_cap[s.capability].append(s)
+        for cap_states in by_cap.values():
+            assert all(a.value != b.value for a, b in zip(cap_states, cap_states[1:]))
 
 
 @pytest.mark.parametrize("archetype", ARCHETYPES)

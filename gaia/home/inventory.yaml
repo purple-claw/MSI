@@ -11,9 +11,9 @@
 #   p        presence probability. For circuit main it is a weight: exactly one main entry per
 #            room is chosen with probability p / sum(p) over the room's main entries.
 #
-# Every room type listed here gets exactly one main circuit light. `main` is the room's one
-# switched ambient light (the only circuit lighting_basic switches). Other light circuits are
-# loads that nothing switches yet.
+# Every room type listed here gets exactly one main circuit light: the room's ambient light,
+# which the lighting policy always switches. Accent, cove, task, night and decor circuits are
+# switched by the lighting policy's activity scenes and rules (see gaia/policies/lighting.py).
 #
 # Protocol and system per load are assigned in gaia/home/inventory.py, not here.
 # All values are source: assumption until Task 11 calibrates them from ETS.
