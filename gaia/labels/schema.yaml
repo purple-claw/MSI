@@ -1,0 +1,90 @@
+# Hierarchical label vocabulary, version 1. Every value a Label carries must appear here.
+# Changing a list is a schema change: bump schema_version and keep old shards readable.
+schema_version: 1
+
+activity:
+  - none
+  - sleep
+  - wake_up
+  - bath
+  - breakfast
+  - living
+  - away
+  - relax
+  - dinner
+  - lunch
+  - tv
+  - cook
+  - rest
+  - wind_down
+
+intent:
+  - illumination
+  - thermal_comfort
+  - air_quality
+  - entertainment
+  - privacy
+  - hygiene
+  - energy_saving
+  - ambience
+  - security
+  - utility
+  - routine
+  - scene
+  - schedule
+  - noticed_waste
+  - cleanup
+  - guest
+  - help_staff
+  - ai_action
+  - protocol_noise
+  - system
+  - unknown
+
+trigger:
+  - room_entry
+  - room_exit
+  - darkness
+  - daylight
+  - wake
+  - sleep
+  - activity_start
+  - activity_end
+  - presence_tick
+  - notice
+  - last_to_sleep
+  - timer
+  - scene
+  - schedule
+
+device_action:
+  - turn_on
+  - turn_off
+  - set_level
+  - set_cct
+  - set_color
+  - open
+  - close
+  - set_position
+  - set_tilt
+  - set_setpoint
+  - set_mode
+  - set_fan_speed
+  - play
+  - pause
+  - stop
+  - set_volume
+  - mute
+  - select_source
+  - lock
+  - unlock
+  - scene_recall
+  - none
+
+provenance:
+  - sim_truth
+  - sim_rule
+  - heuristic_lf
+  - model_inferred
+  - human
+  - imported_public

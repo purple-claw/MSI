@@ -7,7 +7,7 @@ Randomness: "home", "household", "plan/<person>/<day>", and per home the streams
 (sources, forgets), "protocol" (latency) and "engine" (command jitter, cleanup).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from functools import partial
 from itertools import groupby
@@ -20,6 +20,7 @@ from gaia.home.archetypes import APARTMENTS, ARCHETYPES
 from gaia.home.manifest import HomeManifest, Load
 from gaia.household.personas import Household, Member, make_household
 from gaia.interaction.choose import choose_source, forgets
+from gaia.labels.model import Label
 from gaia.rng import rng_for
 from gaia.schema.events import Domain, Event, EventKind, Source
 from gaia.world.calendar import day_type, local_midnight_utc_ms
@@ -89,6 +90,7 @@ class SimResult:
     gt_waste: list[GtWaste]
     gt_presence: list[GtPresence]
     spec: HomeSpec
+    labels: list[Label] = field(default_factory=list)
 
 
 def _room_of(slot: str | None, member: Member, home_id: str, room_index: dict[str, int]) -> int:

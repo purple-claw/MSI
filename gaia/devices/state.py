@@ -87,6 +87,18 @@ class DeviceState:
         self._values[cap] = new
         return (new, prev, clamped)
 
+    def normalise(self, cap: str, value) -> tuple[Value, bool]:
+        """Validate and clamp ``value`` for ``cap`` without storing it. Returns (value, clamped)."""
+        return _normalise(self._capability(cap), value)
+
+    def would_change(self, cap: str, value) -> bool:
+        """True when ``set(cap, value)`` would store a new value. Does not mutate state."""
+        capability = self._capability(cap)
+        if capability.kind == "event":
+            return True
+        new, _ = _normalise(capability, value)
+        return not _same(self._values[cap], new)
+
     def requires_power(self, cap: str) -> bool:
         """True when setting ``cap`` on a powered class needs the device switched on first."""
         capability = self._capability(cap)

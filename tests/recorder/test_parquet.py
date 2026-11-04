@@ -58,3 +58,13 @@ def test_manifest_records_seed_dates_and_festivals(tmp_path):
     assert manifest["start_date"] == "2026-11-02"
     assert manifest["days"] == 2
     assert manifest["festivals"] == ["2026-11-03", "2026-11-04"]
+
+
+def test_labels_parquet_written_even_when_empty(tmp_path):
+    result = _result()
+    result.labels.clear()
+    shard = write_home(result, tmp_path, "g1", "train")
+    table = pq.read_table(shard / "labels.parquet")
+    assert table.num_rows == 0
+    assert "intent" in table.column_names and "source_ref" in table.column_names
+    assert (shard / "gt_cause.parquet").exists()
