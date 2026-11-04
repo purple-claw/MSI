@@ -80,7 +80,8 @@ def test_unknown_class_raises():
 def test_sourced_numbers():
     speaker = get_load_class("media.speaker")
     assert speaker.power_w["standby"] == 4.3
-    assert speaker.power_source.startswith("https://")
+    # Mixed class (standby sourced, on assumed): the class source must be the conservative `assumption`.
+    assert speaker.power_source == "assumption"
 
     geyser = get_load_class("water.geyser")
     assert geyser.power_w["on"] == 2000

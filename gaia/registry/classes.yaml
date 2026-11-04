@@ -155,9 +155,10 @@ media.speaker:
     - {name: volume, kind: level, lo: 0, hi: 1}
     - {name: mute, kind: binary}
   # Sonos Arc idle draw 4.3 W at 120 V (Tier A). Playback draw is unsourced, so no `on` entry.
-  # on 20 W is an assumption. The URL below sources standby only.
+  # standby 4.3 W: Sonos idle draw, https://support.sonos.com/en/article/sonos-power-consumption-while-idle (Tier A).
+  # on 20 W is an assumption. Mixed class, so power_source stays `assumption`.
   power_w: {"on": 20, standby: 4.3}
-  power_source: https://support.sonos.com/en/article/sonos-power-consumption-while-idle
+  power_source: assumption
   waste_rule: unattended
   rooms: [living, bedroom]
 
