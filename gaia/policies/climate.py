@@ -21,7 +21,11 @@ Changed minutes (someone's room or sleep state moved), per person in household o
 
 Exhaust: a fan.exhaust goes on while an occupant does the activity mapped to its room type in
 EXHAUST_ACTIVITY_ROOM, and goes off 5-10 minutes after the activity ends. Each load draws its own
-timer from the policy rng when the activity ends.
+timer from the policy rng when the activity ends. At the timer, a forgetful occupant (p =
+forgetfulness * EXHAUST_FORGET_FACTOR) leaves it on; then it stays on until someone next does the
+activity. That forgotten exhaust is the waste the tracker records (unattended:15).
+
+Sleep-start AC needs heat_index >= SLEEP_AC_MIN_HEAT; below it no AC is drawn for sleep.
 
 One intent per (load, capability) per tick, the first one wins. Iteration uses dicts and tuples.
 """
@@ -31,6 +35,7 @@ import numpy as np
 from gaia.engine.actuator import Intent
 from gaia.engine.context import PersonNow, TickContext
 from gaia.home.manifest import HomeManifest, Load, Room
+from gaia.household.personas import Persona
 from gaia.interaction.choose import forgets
 from gaia.world.season import heat_index
 
@@ -49,6 +54,8 @@ AC_FAN_P = 0.5
 FAN_HEAT = 0.3
 EXHAUST_OFF_MIN = 5
 EXHAUST_OFF_MAX = 10
+EXHAUST_FORGET_FACTOR = 0.5  # at the off timer, a forgetful occupant leaves the exhaust on with p = forgetfulness * this
+SLEEP_AC_MIN_HEAT = 0.3  # no AC at sleep start when the heat index is below this
 EPS = 1e-9
 NEVER = 1 << 62
 
@@ -90,7 +97,9 @@ class Climate:
         self._climate_rooms: dict[str, None] = {}  # rooms with an AC or a ceiling fan
         self._stays: dict[str, _Stay] = {}  # person id -> current stay
         self._next_check = 0  # first minute that needs a full pass without a change
-        self._exhaust_off_at: dict[str, int] = {}  # exhaust load id -> minute of its timer off
+        self._exhaust_off_at: dict[str, tuple[int, float]] = {}  # exhaust load -> (off minute, forget p)
+        self._exhaust_forgotten: dict[str, None] = {}  # exhaust loads left on by a forgetful occupant
+        self._exhaust_persona: dict[str, Persona] = {}  # room id -> persona of its last exhaust user
         self._day = None
         self._heat = 0.0
         self._emitted: set[tuple[str, str]] = set()
@@ -145,7 +154,7 @@ class Climate:
             self._stays[person.person_id] = stay
             if person.asleep and self._ac.get(person.room_id):
                 stay.ac_decided = True
-                if rng.random() < person.persona.ac_affinity * heat:
+                if heat >= SLEEP_AC_MIN_HEAT and rng.random() < person.persona.ac_affinity * heat:
                     self._ac_on(ctx, person, "sleep", rng, out)
         if not person.asleep:
             if (not stay.ac_decided and ctx.minute - stay.start >= AC_AWAKE_MINUTES
@@ -225,16 +234,23 @@ class Climate:
             doer = doing.get(ld.room_id)
             if doer is not None:
                 self._exhaust_off_at.pop(ld.load_id, None)
+                self._exhaust_forgotten.pop(ld.load_id, None)
+                self._exhaust_persona[ld.room_id] = doer.persona
                 if not on:
                     self._power(ld, True, doer, "air_quality", "activity_start", out)
-            elif on:
-                due = self._exhaust_off_at.get(ld.load_id)
-                if due is None:
-                    self._exhaust_off_at[ld.load_id] = ctx.minute + int(
-                        rng.integers(EXHAUST_OFF_MIN, EXHAUST_OFF_MAX + 1))
-                elif ctx.minute >= due:
+            elif on and ld.load_id not in self._exhaust_forgotten:
+                timer = self._exhaust_off_at.get(ld.load_id)
+                if timer is None:
+                    persona = self._exhaust_persona.get(ld.room_id)
+                    forget_p = persona.forgetfulness * EXHAUST_FORGET_FACTOR if persona else 0.0
+                    due = ctx.minute + int(rng.integers(EXHAUST_OFF_MIN, EXHAUST_OFF_MAX + 1))
+                    self._exhaust_off_at[ld.load_id] = (due, forget_p)
+                elif ctx.minute >= timer[0]:
                     del self._exhaust_off_at[ld.load_id]
-                    self._emit(ld, "power", 0.0, None, "none", "air_quality", "timer", "turn_off", out)
+                    if rng.random() < timer[1]:
+                        self._exhaust_forgotten[ld.load_id] = None  # left on, so it is waste
+                    else:
+                        self._emit(ld, "power", 0.0, None, "none", "air_quality", "timer", "turn_off", out)
 
     # --- intents ----------------------------------------------------------------------
 

@@ -6,8 +6,8 @@ Every shade.* load follows these rules:
 - Daylight opening: at sunrise (solar altitude crosses 0 upward), each shade in a room with
   someone awake opens with p 0.8, one draw per room. Trigger daylight.
 - Evening closing: at sunset (crossing 0 downward) one offset of 0-30 minutes is drawn for the
-  day. At that minute, if anyone is home, every shade closes (position 0.0). Labels: privacy,
-  trigger schedule.
+  day. From that minute, every shade closes (position 0.0) at the first minute someone is home.
+  If the home is empty, the close stays pending until then. Labels: privacy, trigger schedule.
 - Wind-down: when someone's wind_down starts in a room, each shade there closes with p 0.9.
   Labels: privacy, trigger activity_start.
 - Midday tilt: at 12:00 local, when heat_index > 0.6, every venetian blind tilts to 0.5. Labels:
@@ -44,6 +44,7 @@ class Shading:
         self._activity: dict[str, str] = {}  # person id -> activity at the last changed minute
         self._prev_sun: float | None = None
         self._close_at: int | None = None  # minute of today's evening close
+        self._close_pending = False  # the evening close is due and waits for someone to come home
         self._day = None
         self._heat = 0.0
         self._emitted: set[tuple[str, str]] = set()
@@ -73,8 +74,10 @@ class Shading:
                 self._close_at = ctx.minute + int(rng.integers(0, SUNSET_WINDOW_MIN + 1))
         if self._close_at is not None and ctx.minute >= self._close_at:
             self._close_at = None
-            if any(p.room_id is not None for p in ctx.people):
-                self._close_all(ctx, out)
+            self._close_pending = True
+        if self._close_pending and any(p.room_id is not None for p in ctx.people):
+            self._close_pending = False
+            self._close_all(ctx, out)
         if ctx.local_minute_of_day == MIDDAY_MINUTE and self._heat_now(ctx) > TILT_HEAT:
             for ld in self._venetians:
                 if ctx.devices.get(ld.load_id, "tilt") != TILT:

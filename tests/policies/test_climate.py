@@ -235,3 +235,42 @@ def test_exhaust_runs_during_cooking_and_stops_5_to_10_minutes_after():
     labels = {lb.event_id: lb for lb in run.labels}
     assert (labels[on[0].event_id].intent, labels[on[0].event_id].trigger) == ("air_quality", "activity_start")
     assert (labels[off[0].event_id].intent, labels[off[0].event_id].trigger) == ("air_quality", "timer")
+
+
+def test_cook_and_bath_leave_no_exhaust_waste():
+    # The exhaust goes off 5-10 minutes after a 30-minute cook or bath, while the occupant is gone.
+    # Those minutes are within the 15-minute grace, so the tracker records nothing.
+    rows = _rows(("living", "living", 5), ("kitchen", "cook", 30), ("living", "living", 30))
+    run, _, _ = _setup("apartment_2bhk", rows, ac_affinity=0.0, fan_affinity=0.0)
+    run.run(65)
+    run.finish()
+    assert not [w for w in run.gt_waste if w.load_class == "fan.exhaust"]
+    rows = _rows(("living", "living", 5), ("bathroom_1", "bath", 30), ("living", "living", 30))
+    run, _, _ = _setup("apartment_2bhk", rows, ac_affinity=0.0, fan_affinity=0.0)
+    run.run(65)
+    run.finish()
+    assert [e for e in run.events if e.kind == EventKind.command and e.load_class == "fan.exhaust"]
+    assert not [w for w in run.gt_waste if w.load_class == "fan.exhaust"]
+
+
+def test_forgotten_exhaust_is_waste_from_last_attended_plus_15_minutes():
+    # forgetfulness 2.0 makes the forget draw certain (p = forgetfulness * 0.5 = 1.0): a forced forget.
+    rows = _rows(("living", "living", 5), ("kitchen", "cook", 30), ("living", "living", 30))
+    run, a, manifest = _setup("apartment_2bhk", rows, forgetfulness=2.0, ac_affinity=0.0, fan_affinity=0.0)
+    run.run(65)
+    run.finish()
+    exhaust = {ld.load_id for ld in manifest.loads_in("h1:kitchen") if ld.load_class == "fan.exhaust"}
+    (w,) = [w for w in run.gt_waste if w.load_id in exhaust]
+    # Last attended: the kitchen tick at minute 34. The waste starts 15 minutes later.
+    assert (w.person_id, w.start_ts_utc, w.end_ts_utc) == (a.person_id, _start_ms() + 49 * MIN, None)
+
+
+def test_sleep_ac_needs_heat_at_least_0_3():
+    # January in Delhi: heat index 0.1, so no AC at sleep start even with ac_affinity 1.0.
+    seed = _find_seed_with_bedroom_ac()
+    run, _, manifest = _setup("apartment_2bhk", _rows(("bedroom_1", "sleep", 30)), start=DELHI_JAN,
+                              seed=seed, ac_affinity=1.0)
+    run.run(30)
+    run.finish()
+    ac = _ac_ids(manifest, "h1:bedroom_1")
+    assert not [e for lid in ac for e in _commands(run, lid, "power")]

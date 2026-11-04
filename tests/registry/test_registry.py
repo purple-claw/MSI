@@ -120,7 +120,7 @@ def test_waste_rules_are_valid():
         if rule in ("unattended", "none"):
             continue
         kind, _, minutes = rule.partition(":")
-        assert kind == "overrun" and minutes.isdigit() and int(minutes) > 0, (lc.name, rule)
+        assert kind in ("unattended", "overrun") and minutes.isdigit() and int(minutes) > 0, (lc.name, rule)
 
 
 def test_light_tunable_cct_range():

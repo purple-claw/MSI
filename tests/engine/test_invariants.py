@@ -93,8 +93,8 @@ def test_waste_never_overlaps_awake_occupancy(archetype, seed):
     room_index = {room.room_id: i for i, room in enumerate(r.manifest.rooms)}
     room_of_load = {ld.load_id: room_index[ld.room_id] for ld in r.manifest.loads}
     for w in r.gt_waste:
-        if get_load_class(w.load_class).waste_rule != "unattended":
-            continue  # overrun waste (e.g. fan.exhaust) ignores occupancy by design, see gaia/engine/waste.py
+        if get_load_class(w.load_class).waste_rule.startswith("overrun"):
+            continue  # overrun waste ignores occupancy by design: see test_overrun_waste_starts_after_on_plus_n
         idx = room_of_load[w.load_id]
         lo = (w.start_ts_utc - start) // 60_000
         # ceil: an interval ending mid-minute still counts that minute as covered
@@ -164,3 +164,21 @@ def test_lit_unoccupied_minutes_lie_inside_waste(archetype, seed):
         assert any(w.load_id == load_id and w.start_ts_utc <= tick
                    and (w.end_ts_utc is None or w.end_ts_utc > tick)
                    for w in run.gt_waste), (load_id, m)
+
+
+@pytest.mark.parametrize("archetype", ARCHETYPES)
+@settings(max_examples=25, deadline=None)
+@given(seed=SEEDS)
+def test_overrun_waste_starts_after_on_plus_n(archetype, seed):
+    r = _run(seed, archetype)
+    on_states = defaultdict(list)  # load -> (ts, value) of its power states
+    for e in r.events:
+        if e.kind == EventKind.state and e.capability == "power":
+            on_states[e.load_id].append((e.ts_utc, e.value))
+    for w in r.gt_waste:
+        rule = get_load_class(w.load_class).waste_rule
+        if not rule.startswith("overrun"):
+            continue
+        n = int(rule.partition(":")[2]) * 60_000
+        on_ts = max(ts for ts, value in on_states[w.load_id] if value == 1.0 and ts <= w.start_ts_utc)
+        assert w.start_ts_utc >= on_ts + n, (w, on_ts)

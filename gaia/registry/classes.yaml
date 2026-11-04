@@ -3,7 +3,7 @@
 # Fields per class:
 #   domain, matter_device_type (null if no Matter device type), capabilities,
 #   power_w (state -> watts; keys on | standby | active), power_source
-#   (URL, or the literal `assumption`), waste_rule (unattended | overrun:<min> | none),
+#   (URL, or the literal `assumption`), waste_rule (unattended | unattended:<grace min> | overrun:<min> | none),
 #   rooms, sleeper_counts_as_attended (optional, default false: a sleeping occupant counts as
 #   attending the load for the waste rule).
 # Capability kinds: binary (implicit 0/1), level/position/tilt/hue/saturation (0-1),
@@ -293,7 +293,7 @@ fan.exhaust:
     - {name: power, kind: binary}
   power_w: {"on": 40}
   power_source: assumption
-  waste_rule: overrun:15
+  waste_rule: unattended:15
   rooms: [bathroom, kitchen]
 
 air.purifier:

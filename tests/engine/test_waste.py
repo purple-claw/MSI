@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from types import SimpleNamespace
 
+import pytest
+
 from gaia.engine.waste import WasteTracker
 from gaia.home.manifest import HomeManifest, Load, Room
 from gaia.schema.events import Protocol
@@ -35,7 +37,8 @@ def _manifest() -> HomeManifest:
         adjacency={"r1": ()},
         loads=(
             Load("l_main", "r1", "light.onoff", Protocol.knx, "knx_dali", "main", "bulb"),   # unattended
-            Load("l_fan", "r1", "fan.exhaust", Protocol.knx, "knx_dali", "none"),   # overrun:15
+            Load("l_fan", "r1", "fan.exhaust", Protocol.knx, "knx_dali", "none"),   # unattended:15
+            Load("l_chim", "r1", "kitchen.chimney", Protocol.knx, "knx_dali", "none"),  # overrun:10
             Load("l_shade", "r1", "shade.curtain", Protocol.knx, "knx_dali", "none"),  # none
         ),
     )
@@ -84,23 +87,66 @@ def test_awake_occupied_room_never_opens():
     assert tracker.finish() == []
 
 
-def test_overrun_opens_after_n_minutes_on_with_no_person():
+def test_overrun_opens_n_minutes_after_on_whatever_the_occupancy():
     tracker = WasteTracker(_manifest())
-    tracker.on_state("l_fan", T0, True)
-    tracker.on_tick(_Ctx(T0 + 14 * MIN, leavers=(("p1", "r1"),)))
-    tracker.on_tick(_Ctx(T0 + 16 * MIN, awake_rooms=("r1",)))  # occupancy is irrelevant to overrun
-    tracker.on_state("l_fan", T0 + 20 * MIN, False)
+    tracker.on_state("l_chim", T0, True)
+    tracker.on_tick(_Ctx(T0 + 9 * MIN, leavers=(("p1", "r1"),)))
+    tracker.on_tick(_Ctx(T0 + 11 * MIN, awake_rooms=("r1",)))  # occupancy is irrelevant to overrun
+    tracker.on_state("l_chim", T0 + 15 * MIN, False)
     (w,) = tracker.finish()
     assert (w.load_class, w.person_id, w.start_ts_utc, w.end_ts_utc) == (
-        "fan.exhaust", None, T0 + 15 * MIN, T0 + 20 * MIN)
+        "kitchen.chimney", None, T0 + 10 * MIN, T0 + 15 * MIN)
 
 
 def test_overrun_on_short_run_is_not_wasteful():
     tracker = WasteTracker(_manifest())
-    tracker.on_state("l_fan", T0, True)
+    tracker.on_state("l_chim", T0, True)
     tracker.on_tick(_Ctx(T0 + 5 * MIN))
-    tracker.on_state("l_fan", T0 + 10 * MIN, False)
+    tracker.on_state("l_chim", T0 + 10 * MIN, False)
     assert tracker.finish() == []
+
+
+def test_grace_waste_starts_at_last_attended_plus_n():
+    tracker = WasteTracker(_manifest())
+    tracker.on_state("l_fan", T0, True)
+    tracker.on_tick(_Ctx(T0 + MIN, awake_rooms=("r1",)))  # last attended: minute 1
+    tracker.on_tick(_Ctx(T0 + 10 * MIN, leavers=(("p1", "r1"),)))  # gone; 9 minutes unattended, not yet waste
+    tracker.on_tick(_Ctx(T0 + 20 * MIN))  # 19 minutes unattended: waste from minute 1 + 15 = 16
+    tracker.on_state("l_fan", T0 + 30 * MIN, False)
+    (w,) = tracker.finish()
+    assert (w.load_class, w.person_id, w.start_ts_utc, w.end_ts_utc) == (
+        "fan.exhaust", "p1", T0 + 16 * MIN, T0 + 30 * MIN)
+
+
+def test_grace_waste_closes_when_someone_comes_back():
+    tracker = WasteTracker(_manifest())
+    tracker.on_state("l_fan", T0, True)
+    tracker.on_tick(_Ctx(T0 + MIN, awake_rooms=("r1",)))
+    tracker.on_tick(_Ctx(T0 + 10 * MIN, leavers=(("p1", "r1"),)))
+    tracker.on_tick(_Ctx(T0 + 20 * MIN))
+    tracker.on_tick(_Ctx(T0 + 25 * MIN, awake_rooms=("r1",)))
+    (w,) = tracker.finish()
+    assert (w.start_ts_utc, w.end_ts_utc) == (T0 + 16 * MIN, T0 + 25 * MIN)
+
+
+def test_grace_gap_within_n_minutes_is_not_waste():
+    tracker = WasteTracker(_manifest())
+    tracker.on_state("l_fan", T0, True)
+    tracker.on_tick(_Ctx(T0 + MIN, awake_rooms=("r1",)))
+    tracker.on_tick(_Ctx(T0 + 10 * MIN, leavers=(("p1", "r1"),)))
+    tracker.on_state("l_fan", T0 + 15 * MIN, False)  # off at minute 15: the gap is 14 minutes
+    assert tracker.finish() == []
+
+
+def test_parse_rule_grace_and_overrun_forms():
+    from gaia.engine.waste import parse_rule
+    assert parse_rule("unattended") == ("unattended", 0)
+    assert parse_rule("unattended:15") == ("unattended", 15)
+    assert parse_rule("overrun:10") == ("overrun", 10)
+    assert parse_rule("none") == ("none", 0)
+    for bad in ("unattended:0", "unattended:", "overrun:0", "sometimes"):
+        with pytest.raises(ValueError):
+            parse_rule(bad)
 
 
 def test_none_rule_never_records_waste():

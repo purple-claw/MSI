@@ -4,6 +4,10 @@ The rule comes from the load-class registry:
 - ``unattended``: on while no awake member is in its room. It opens at the first such minute.
   A class with ``sleeper_counts_as_attended`` (climate and ceiling fans) also counts a sleeping
   member as attending, so a bedroom AC running overnight is not waste.
+- ``unattended:N`` (grace form): waste only while on with no awake member in its room for more
+  than N minutes. The interval starts at last-attended + N minutes, where last-attended is the
+  last tick an awake member was in the room (or the on state, if nobody has been since). An awake
+  arrival closes it, as for ``unattended``. A normal cook or bath therefore is not waste.
 - ``overrun:N``: on for more than N minutes. It opens N minutes after the on state and closes
   at the off state. Occupancy does not matter, and nobody is recorded as having left it, so
   its person is None.
@@ -31,7 +35,7 @@ from gaia.registry.registry import get_load_class
 MS_PER_MIN = 60_000
 MIN_WASTE_MS = MS_PER_MIN  # shorter waste intervals are not emitted as ground truth
 NIGHT_CIRCUIT = "night"
-_RULE_RE = re.compile(r"(unattended|none|overrun:([1-9][0-9]*))")
+_RULE_RE = re.compile(r"unattended(?::[1-9][0-9]*)?|none|overrun:[1-9][0-9]*")
 
 
 @dataclass(frozen=True)
@@ -44,13 +48,12 @@ class GtWaste:
 
 
 def parse_rule(rule: str) -> tuple[str, int]:
-    """Return (kind, minutes): kind is unattended, overrun or none; minutes is 0 unless overrun."""
-    match = _RULE_RE.fullmatch(rule)
-    if match is None:
+    """Return (kind, minutes): kind is unattended, overrun or none. Minutes is the grace period of
+    ``unattended:N`` and the on time of ``overrun:N``, else 0."""
+    if _RULE_RE.fullmatch(rule) is None:
         raise ValueError(f"unknown waste_rule: {rule!r}")
-    if match.group(2) is not None:
-        return "overrun", int(match.group(2))
-    return match.group(1), 0
+    kind, _, minutes = rule.partition(":")
+    return kind, int(minutes) if minutes else 0
 
 
 class WasteTracker:
@@ -65,6 +68,7 @@ class WasteTracker:
             for ld in manifest.loads
         }
         self._on: dict[str, int] = {}  # on loads -> ts of their on state (insertion ordered)
+        self._last_attended: dict[str, int] = {}  # on loads -> last tick an awake member was in the room
         self._open: dict[str, tuple[str | None, int]] = {}  # load -> (person, start)
         self._off_at: dict[str, int] = {}  # open load -> ts of a pending off state
         self._last_leaver: dict[str, str] = {}  # room id -> person id
@@ -77,8 +81,10 @@ class WasteTracker:
             if pending is not None:
                 self._close(load_id, pending)  # off from ``pending`` until this on
             self._on.setdefault(load_id, ts_ms)
+            self._last_attended.setdefault(load_id, ts_ms)
         else:
             self._on.pop(load_id, None)
+            self._last_attended.pop(load_id, None)
             if load_id in self._open:
                 self._off_at[load_id] = ts_ms  # settled by on_tick, at the off ts or an arrival
 
@@ -89,14 +95,20 @@ class WasteTracker:
         for load_id in tuple(self._open):
             self._settle(ctx, load_id)
         for load_id, on_ts in self._on.items():  # _on is not changed inside this loop
-            if load_id in self._open:
-                continue
             load = self._loads[load_id]
             kind, minutes = self._rules[load_id]
             if kind == "unattended":
-                if not self._attended(ctx, load_id):
-                    self._open_at(load_id, ctx.tick_ms, self._last_leaver.get(load.room_id))
-            elif kind == "overrun":
+                if self._attended(ctx, load_id):
+                    self._last_attended[load_id] = ctx.tick_ms
+                elif load_id not in self._open:
+                    leaver = self._last_leaver.get(load.room_id)
+                    if minutes == 0:
+                        self._open_at(load_id, ctx.tick_ms, leaver)
+                    else:  # grace: the gap counts from the last attended tick
+                        due = self._last_attended.get(load_id, on_ts) + minutes * MS_PER_MIN
+                        if ctx.tick_ms >= due:
+                            self._open_at(load_id, due, leaver)
+            elif kind == "overrun" and load_id not in self._open:
                 due = on_ts + minutes * MS_PER_MIN
                 if ctx.tick_ms >= due:
                     self._open_at(load_id, due, None)

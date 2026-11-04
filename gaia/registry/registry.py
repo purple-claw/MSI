@@ -21,7 +21,7 @@ RANGED_KINDS = frozenset({"kelvin", "celsius", "count"})
 SEMANTICS_KINDS = frozenset({"position", "tilt"})
 POWER_STATES = frozenset({"on", "standby", "active"})
 SENSOR_DOMAIN = "sensing"
-WASTE_RULE_RE = re.compile(r"unattended|none|overrun:[1-9][0-9]*")
+WASTE_RULE_RE = re.compile(r"unattended(?::[1-9][0-9]*)?|none|overrun:[1-9][0-9]*")
 
 FIXTURES: frozenset[str] = frozenset({
     "downlight", "profile", "cove", "pendant", "chandelier", "track", "wall_washer",
