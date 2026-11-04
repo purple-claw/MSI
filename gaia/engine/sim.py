@@ -96,7 +96,8 @@ def _room_of(slot: str | None, member: Member, home_id: str, room_index: dict[st
 class _Run:
     def __init__(self, spec: HomeSpec, manifest: HomeManifest, household: Household,
                  start_ms: int, rooms: list[list[int]], acts: list[list[int]],
-                 act_names: list[str], policy_order: Sequence[type[Policy]] = POLICY_ORDER) -> None:
+                 act_names: list[str], policy_order: Sequence[type[Policy]] = POLICY_ORDER,
+                 reuse_people: bool = True) -> None:
         names = [cls.name for cls in policy_order]
         if len(set(names)) != len(names):
             raise ValueError(f"policy names must be unique within a run: {names}")
@@ -117,7 +118,7 @@ class _Run:
             manifest=manifest,
             devices=DeviceView(self.devices),
             grid=OccupancyGrid(self.members, [room.room_id for room in manifest.rooms],
-                               rooms, acts, act_names),
+                               rooms, acts, act_names, reuse_people),
             sun=sun_altitude_grid(city, start_ms, total),
             calendar=calendar,
         )

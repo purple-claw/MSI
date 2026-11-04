@@ -2,7 +2,7 @@
 
 The engine builds one ``HomeEnv`` per home (grids, the sun for every minute, the calendar and
 a per-minute ``changed`` flag) and one cheap ``TickContext`` per minute. ``people`` is built on
-first access, and reused from the previous minute when no room or sleep state changed.
+first access, and reused from the previous minute only when the two minutes before it are quiet.
 """
 
 from dataclasses import dataclass, field
@@ -46,15 +46,19 @@ class DeviceView:
 
 class OccupancyGrid:
     """Per-member minute grids (room index, activity code), interned PersonNow objects and the
-    ``changed`` flags: minute m changes someone's room or sleep state relative to m-1."""
+    ``changed`` flags: minute m differs from m-1 for someone's room, sleep or activity.
+
+    ``reuse_people`` (private, for the equivalence test) turns off the tuple reuse in snapshot.
+    """
 
     def __init__(self, members: tuple[Member, ...], room_ids: list[str], rooms: list[list[int]],
-                 acts: list[list[int]], act_names: list[str]) -> None:
+                 acts: list[list[int]], act_names: list[str], reuse_people: bool = True) -> None:
         self._members = members
         self._room_ids = room_ids
         self._rooms = rooms
         self._acts = acts
         self._act_names = act_names
+        self._reuse = reuse_people
         self._interned: list[dict[tuple, PersonNow]] = [{} for _ in members]
         self._last: tuple[PersonNow, ...] = ()
         self._last_minute = -2
@@ -67,12 +71,15 @@ class OccupancyGrid:
         flags = np.zeros(len(rooms[0]), dtype=bool)
         for room_row, act_row in zip(rooms, acts):
             room = np.asarray(room_row)
-            asleep = np.asarray(act_row) == SLEEP_CODE
-            flags[1:] |= (room[1:] != room[:-1]) | (asleep[1:] != asleep[:-1])
+            act = np.asarray(act_row)  # an activity change is a change, even within one room
+            flags[1:] |= (room[1:] != room[:-1]) | (act[1:] != act[:-1])
         return flags.tolist()
 
     def snapshot(self, m: int) -> tuple[PersonNow, ...]:
-        if m and self._last_minute == m - 1 and not self.changed[m]:
+        # A PersonNow holds the state at m and at m-1. Both are unchanged only when minutes m-1
+        # and m are both quiet, so the previous tuple is valid only then.
+        if (self._reuse and m and self._last_minute == m - 1
+                and not self.changed[m] and not self.changed[m - 1]):
             self._last_minute = m
             return self._last
         out = []
