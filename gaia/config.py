@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from gaia.engine.sim import HomeSpec
 from gaia.home.archetypes import APARTMENTS, ARCHETYPES
@@ -27,6 +27,7 @@ class RunConfig(BaseModel):
     split: str = "train"
     out_dir: Path
     workers: int = Field(default=0, ge=0)
+    ets_dir: Path | None = None  # anonymised ETS layouts (scripts/import_ets.py output)
 
     @field_validator("cities")
     @classmethod
@@ -39,10 +40,17 @@ class RunConfig(BaseModel):
     @field_validator("archetypes")
     @classmethod
     def _known_archetypes(cls, value: list[str]) -> list[str]:
-        unknown = [a for a in value if a not in ARCHETYPES]
+        unknown = [a for a in value if a not in ARCHETYPES and a != "ets"]
         if unknown:
             raise ValueError(f"unknown archetypes: {unknown}")
         return value
+
+
+    @model_validator(mode="after")
+    def _ets_needs_dir(self) -> "RunConfig":
+        if "ets" in self.archetypes and self.ets_dir is None:
+            raise ValueError("archetype 'ets' needs ets_dir set in the run config")
+        return self
 
 
 def load_config(path: Path) -> RunConfig:
@@ -64,4 +72,5 @@ def home_spec(cfg: RunConfig, index: int) -> HomeSpec:
         start_date=cfg.start_date,
         days=cfg.days,
         festivals=frozenset(cfg.festivals),
+        ets_dir=str(cfg.ets_dir) if cfg.ets_dir else None,
     )

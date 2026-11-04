@@ -1,0 +1,61 @@
+# ETS name maps. Patterns are case-insensitive regexes; the first match wins, so order matters
+# (dressing and bathroom words come before bedroom words: "MBR Dressing", "Powder Room MBR").
+# Room types are the simulator's room vocabulary (gaia/home/archetypes.py _WINDOW).
+rooms:
+  - [dressing, dressing]
+  - ['bath|toilet|powder|\bwash ?room|\bwc\b', bathroom]
+  - ['theat(re|er)|\bht\b', home_theatre]
+  - ['pooja|puja|prayer|mandir', pooja]
+  - ['dining', dining]
+  - ['kitchen|pantry', kitchen]
+  - ['\bdh\b|maid|staff|utility|laundry|servant', utility]
+  - ['master|\bmbr|\bcbr|\bgbr|\bbed|\bkids|children|guest room', bedroom]
+  - ['living|\bhall\b|lounge|drawing|family|\bden\b', living]
+  - ['study|office|library|\bgym\b', study]
+  - ['lobby|foyer|entr(a|e)nce', lobby]
+  - ['stair|steps', staircase]
+  - ['passage|corridor', passage]
+  - ['balcony', balcony]
+  - ['terrace|\bdeck\b', terrace]
+  - ['garden|landscape|facade|parking|\bgate\b|lawn|pool', garden]
+
+# ETS load type -> class. Switch loads go through switch_keywords first, then default to a plain light.
+load_types:
+  Dimmer: light.dimmable
+  Tunable: light.tunable
+  Curtain: shade.curtain
+  HVAC: climate.vrf_indoor
+  Scene: keypad.scene
+switch_keywords:
+  - ['exhaust', fan.exhaust]
+  - ['\bfan', fan.ceiling]
+  - ['geyser|heater', water.geyser]
+  - ['socket|plug', plug.smart]
+switch_default: light.onoff
+
+# Light fixture by load-name keyword (first match), then the circuit that fixture sits on.
+fixtures:
+  - ['cove', cove]
+  - ['strip|skirting|\bled\b', strip]
+  - ['profile', profile]
+  - ['chandelier', chandelier]
+  - ['pendant|hanging', pendant]
+  - ['wall ?wash', wall_washer]
+  - ['\bstep|\bfoot', step]
+  - ['spot|track', track]
+  - ['down|\bdl\b', downlight]
+fixture_circuit:
+  cove: cove
+  strip: decor
+  profile: accent
+  chandelier: decor
+  pendant: decor
+  wall_washer: accent
+  step: night
+  track: accent
+  downlight: main
+  bulb: main
+default_fixture:
+  light.onoff: bulb
+  light.dimmable: downlight
+  light.tunable: downlight

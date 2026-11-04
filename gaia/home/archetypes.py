@@ -1,103 +1,99 @@
-"""Apartment archetypes. Layouts are data (APARTMENTS rows); build_apartment does the rest.
+"""Home archetypes. Layouts are data (ARCHETYPE_SPECS rows); build_home does the rest.
 
-Randomness is drawn only from the rng passed in, in a fixed order, so the same
-rng state always yields the same manifest.
+Rooms are living, kitchen, the spec's extra single-instance rooms, then bedroom_<n> and
+bathroom_<n>. Each room draws its loads from the tier's inventory (gaia/home/inventory.py).
+Randomness is drawn only from the rng passed in, in a fixed order, so the same rng state always
+yields the same manifest.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from typing import Callable
 
 import numpy as np
 
+from gaia.home.inventory import (
+    SENSOR_RICHNESS,
+    TIER_LIGHTING,
+    assign_protocol,
+    choose_entries,
+    room_type_of,
+    sensor_loads,
+    weighted_choice,
+)
 from gaia.home.manifest import HomeManifest, Load, Room
-from gaia.registry.load_classes import get_load_class
-from gaia.schema.events import Protocol
 
 
 @dataclass(frozen=True)
-class ApartmentSpec:
+class ArchetypeSpec:
     name: str
     bedrooms: int
     bathrooms: int
     has_separate_living: bool
     household_size: tuple[int, int]  # (min, max) members
+    extra_rooms: tuple[str, ...]  # single-instance room types, in layout order
+    # dict is unhashable; excluded from hash, still compared for equality.
+    tier_weights: dict[str, float] = field(hash=False)
 
 
-APARTMENTS: dict[str, ApartmentSpec] = {
+ARCHETYPE_SPECS: dict[str, ArchetypeSpec] = {
     s.name: s
     for s in (
-        ApartmentSpec("apartment_1rk", 0, 1, False, (1, 2)),
-        ApartmentSpec("apartment_1bhk", 1, 1, True, (1, 2)),
-        ApartmentSpec("apartment_2bhk", 2, 2, True, (2, 3)),
-        ApartmentSpec("apartment_3bhk", 3, 3, True, (2, 4)),
-        ApartmentSpec("apartment_4bhk", 4, 4, True, (3, 5)),
+        ArchetypeSpec("apartment_1rk", 0, 1, False, (1, 2), (), {"basic": 1.0}),
+        ArchetypeSpec("apartment_1bhk", 1, 1, True, (1, 2), (), {"basic": 1.0}),
+        ArchetypeSpec("apartment_2bhk", 2, 2, True, (2, 3), (), {"standard": 1.0}),
+        ArchetypeSpec("apartment_3bhk", 3, 3, True, (2, 4), (), {"standard": 0.6, "premium": 0.4}),
+        ArchetypeSpec("apartment_4bhk", 4, 4, True, (3, 5), (), {"premium": 1.0}),
+        ArchetypeSpec("independent_house", 3, 3, True, (3, 6),
+                      ("dining", "pooja", "balcony", "passage", "staircase"), {"premium": 1.0}),
+        ArchetypeSpec("villa", 4, 5, True, (3, 7),
+                      ("dining", "pooja", "home_theatre", "study", "dressing", "terrace", "garden",
+                       "lobby", "staircase", "utility"), {"luxury": 1.0}),
     )
 }
 
-_WINDOW = {"living": 0.03, "kitchen": 0.02, "bedroom": 0.02, "bathroom": 0.005}
+# The five apartment archetypes (the default run config and the G1 set).
+APARTMENTS: dict[str, ArchetypeSpec] = {
+    name: spec for name, spec in ARCHETYPE_SPECS.items() if name.startswith("apartment_")
+}
+
+# window_factor: share of outdoor lux that reaches the room (assumption; no ETS data yet).
+_WINDOW = {
+    "living": 0.03, "kitchen": 0.02, "bedroom": 0.02, "bathroom": 0.005,
+    "dining": 0.02, "pooja": 0.01, "home_theatre": 0.0, "study": 0.02, "dressing": 0.01,
+    "terrace": 0.5, "garden": 1.0, "lobby": 0.01, "staircase": 0.01, "utility": 0.01,
+    "passage": 0.005, "balcony": 0.3,
+}
 
 
-def _room_names(spec: ApartmentSpec) -> list[str]:
-    names = ["living", "kitchen"]
+def _room_names(spec: ArchetypeSpec) -> list[str]:
+    names = ["living", "kitchen", *spec.extra_rooms]
     names += [f"bedroom_{i}" for i in range(1, spec.bedrooms + 1)]
     names += [f"bathroom_{i}" for i in range(1, spec.bathrooms + 1)]
     return names
 
 
-def _protocol(rng: np.random.Generator) -> Protocol:
-    x = rng.random()
-    if x < 0.6:
-        return Protocol.knx
-    if x < 0.85:
-        return Protocol.zigbee
-    return Protocol.matter
-
-
-def _room_loads(room_name: str, is_1rk: bool) -> list[tuple[str, float | None]]:
-    """Return (load_class, presence probability or None for always-present) per room.
-
-    The main light is always first; its class is drawn separately.
-    """
-    if room_name == "living":
-        extras: list[tuple[str, float | None]] = [("fan.speed", None)]
-        if is_1rk:
-            extras.append(("ac", 0.5))
-        extras.append(("tv_media", None))
-        return extras
-    if room_name == "kitchen":
-        return [("exhaust", None)]
-    if room_name.startswith("bedroom_"):
-        p_ac = 0.8 if room_name == "bedroom_1" else 0.4
-        return [("fan.speed", None), ("ac", p_ac)]
-    return [("geyser", 0.5)]  # bathroom
-
-
-def build_apartment(spec: ApartmentSpec, home_id: str, city: str, rng: np.random.Generator) -> HomeManifest:
-    is_1rk = spec.bedrooms == 0
-    names = _room_names(spec)
+def build_home(archetype: ArchetypeSpec, home_id: str, city: str, rng: np.random.Generator) -> HomeManifest:
+    tier = weighted_choice(list(archetype.tier_weights.items()), rng)
+    lighting_system = weighted_choice(TIER_LIGHTING[tier], rng)
     rooms: list[Room] = []
     loads: list[Load] = []
 
-    for name in names:
-        room_type = name.rsplit("_", 1)[0] if name[-1].isdigit() else name
+    for name in _room_names(archetype):
         room_id = f"{home_id}:{name}"
-        rooms.append(Room(room_id, room_type, _WINDOW[room_type]))
+        rooms.append(Room(room_id, room_type_of(name), _WINDOW[room_type_of(name)]))
+        for counter, entry in enumerate(choose_entries(tier, archetype.name, name, rng)):
+            system, protocol = assign_protocol(entry.load_class, lighting_system, rng)
+            loads.append(Load(
+                load_id=f"{room_id}:{entry.load_class}:{counter}", room_id=room_id,
+                load_class=entry.load_class, protocol=protocol, system=system,
+                circuit=entry.circuit,
+                fixture=entry.fixture,
+            ))
 
-        counter = 0
-
-        def add(load_class: str, is_main: bool = False) -> None:
-            nonlocal counter
-            get_load_class(load_class)  # fail fast on unknown class
-            loads.append(
-                Load(f"{room_id}:{load_class}:{counter}", room_id, load_class, _protocol(rng), is_main)
-            )
-            counter += 1
-
-        add("light.dim" if rng.random() < 0.5 else "light.onoff", is_main=True)
-        for load_class, p in _room_loads(name, is_1rk):
-            if p is None or rng.random() < p:
-                add(load_class)
+    # Sensor richness is drawn last, so every draw above is the same for every richness.
+    richness = weighted_choice(SENSOR_RICHNESS, rng)
+    loads.extend(sensor_loads(richness, archetype.name, rooms, loads, rng))
 
     hub = f"{home_id}:living"
     adjacency: dict[str, tuple[str, ...]] = {}
@@ -109,14 +105,17 @@ def build_apartment(spec: ApartmentSpec, home_id: str, city: str, rng: np.random
 
     return HomeManifest(
         home_id=home_id,
-        archetype=spec.name,
+        archetype=archetype.name,
         city=city,
+        tier=tier,
+        lighting_system=lighting_system,
         rooms=tuple(rooms),
         adjacency=adjacency,
         loads=tuple(loads),
+        sensor_richness=richness,
     )
 
 
 ARCHETYPES: dict[str, Callable[[str, str, np.random.Generator], HomeManifest]] = {
-    name: partial(build_apartment, spec) for name, spec in APARTMENTS.items()
+    name: partial(build_home, spec) for name, spec in ARCHETYPE_SPECS.items()
 }

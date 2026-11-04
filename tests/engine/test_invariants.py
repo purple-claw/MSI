@@ -1,3 +1,4 @@
+from bisect import bisect_left
 from collections import defaultdict
 from datetime import date
 
@@ -7,10 +8,15 @@ from hypothesis import strategies as st
 
 from gaia.engine.sim import SLEEP_CODE, HomeSpec, _build_grids, _Run, simulate_home
 from gaia.engine.timeline import MINUTES_PER_DAY
+from gaia.registry.registry import get_load_class
 from gaia.schema.events import EventKind
 from gaia.world.calendar import local_midnight_utc_ms
+from gaia.world.cities import CITIES
 
-ARCHETYPES = ["apartment_1rk", "apartment_1bhk", "apartment_2bhk", "apartment_3bhk", "apartment_4bhk"]
+MS_PER_MIN = 60_000
+
+ARCHETYPES = ["apartment_1rk", "apartment_1bhk", "apartment_2bhk", "apartment_3bhk", "apartment_4bhk",
+              "independent_house", "villa"]
 DAYS = 3
 START = date(2026, 11, 2)
 SEEDS = st.integers(0, 10**6)
@@ -50,23 +56,25 @@ def test_every_state_has_command(archetype, seed):
 @settings(max_examples=25, deadline=None)
 @given(seed=SEEDS)
 def test_no_redundant_state(archetype, seed):
-    last: dict[str, float] = {}
+    # Keyed by (load, capability): a dimmable's power state and its level can share a value.
+    last: dict[tuple[str, str], float] = {}
     for e in _run(seed, archetype).events:
         if e.kind != EventKind.state:
             continue
-        if e.load_id in last:
-            assert last[e.load_id] != e.value
-        last[e.load_id] = e.value
+        key = (e.load_id, e.capability)
+        if key in last:
+            assert last[key] != e.value
+        last[key] = e.value
 
 
 @pytest.mark.parametrize("archetype", ARCHETYPES)
 @settings(max_examples=25, deadline=None)
 @given(seed=SEEDS)
-def test_gt_cause_covers_commands(archetype, seed):
+def test_labels_cover_commands(archetype, seed):
     r = _run(seed, archetype)
-    commands = [e.event_id for e in r.events if e.kind == EventKind.command]
-    causes = [c.event_id for c in r.gt_cause]
-    assert sorted(commands) == sorted(causes) and len(set(causes)) == len(causes)
+    commands = [e.event_id for e in r.events if e.kind in (EventKind.command, EventKind.sensor)]
+    labelled = [lb.event_id for lb in r.labels]
+    assert sorted(commands) == sorted(labelled) and len(set(labelled)) == len(labelled)
 
 
 @pytest.mark.parametrize("archetype", ARCHETYPES)
@@ -86,9 +94,11 @@ def test_waste_never_overlaps_awake_occupancy(archetype, seed):
     _, _, rooms, acts, _ = _build_grids(spec)
     total = DAYS * MINUTES_PER_DAY
     start = local_midnight_utc_ms(START, 330)
-    room_of_load = {r.manifest.main_light(room.room_id).load_id: i
-                    for i, room in enumerate(r.manifest.rooms)}
+    room_index = {room.room_id: i for i, room in enumerate(r.manifest.rooms)}
+    room_of_load = {ld.load_id: room_index[ld.room_id] for ld in r.manifest.loads}
     for w in r.gt_waste:
+        if get_load_class(w.load_class).waste_rule.startswith("overrun"):
+            continue  # overrun waste ignores occupancy by design: see test_overrun_waste_starts_after_on_plus_n
         idx = room_of_load[w.load_id]
         lo = (w.start_ts_utc - start) // 60_000
         # ceil: an interval ending mid-minute still counts that minute as covered
@@ -113,8 +123,12 @@ def test_per_load_states_alternate_and_follow_commands(archetype, seed):
         ts = [s.ts_utc for s in states]
         assert all(a < b for a, b in zip(ts, ts[1:]))
         assert states[0].value == 1.0  # lights start off, so the first state is on
-        assert all(a.value != b.value for a, b in zip(states, states[1:]))
         assert all(s.ts_utc > cmd_ts[s.ref_id] for s in states)
+        by_cap: dict[str, list] = defaultdict(list)
+        for s in states:  # alternation is per capability: power and level may share a value
+            by_cap[s.capability].append(s)
+        for cap_states in by_cap.values():
+            assert all(a.value != b.value for a, b in zip(cap_states, cap_states[1:]))
 
 
 @pytest.mark.parametrize("archetype", ARCHETYPES)
@@ -138,25 +152,91 @@ def test_lit_unoccupied_minutes_lie_inside_waste(archetype, seed):
     total = DAYS * MINUTES_PER_DAY
     start = local_midnight_utc_ms(START, 330)
     run = _Run(spec, manifest, household, start, rooms, acts, names)
-    n = len(run.members)
-    lit_unoccupied: list[tuple[int, int]] = []  # (room index, minute)
+    n = len(household.members)
+    lit_unoccupied: list[tuple[str, int]] = []  # (load id, minute)
     for m in range(total):
-        tick = start + m * 60_000
-        for i in range(n):
-            if m > 0:
-                run._leave(i, m, tick)
-                run._fall_asleep(i, m, tick)
-            run._close_waste_on_entry(i, m, tick)
-            run._presence(i, m, tick)
-        for r in range(len(run.mains)):
-            if run.mains[r] is None or not run.light_on[r]:
+        run.step(m)
+        for r, room in enumerate(manifest.rooms):
+            main = manifest.main_light(room.room_id)
+            if main is None or not run.devices.is_on(main.load_id):
                 continue
             if not any(rooms[j][m] == r and acts[j][m] != SLEEP_CODE for j in range(n)):
-                lit_unoccupied.append((r, m))
+                lit_unoccupied.append((main.load_id, m))
     run.finish()
-    for r, m in lit_unoccupied:
-        load_id = run.mains[r].load_id
+    for load_id, m in lit_unoccupied:
         tick = start + m * 60_000
         assert any(w.load_id == load_id and w.start_ts_utc <= tick
                    and (w.end_ts_utc is None or w.end_ts_utc > tick)
-                   for w in run.gt_waste), (manifest.rooms[r].room_id, m)
+                   for w in run.gt_waste), (load_id, m)
+
+
+@pytest.mark.parametrize("archetype", ARCHETYPES)
+@settings(max_examples=25, deadline=None)
+@given(seed=SEEDS)
+def test_overrun_waste_starts_after_on_plus_n(archetype, seed):
+    r = _run(seed, archetype)
+    on_states = defaultdict(list)  # load -> (ts, value) of its power states
+    for e in r.events:
+        if e.kind == EventKind.state and e.capability == "power":
+            on_states[e.load_id].append((e.ts_utc, e.value))
+    for w in r.gt_waste:
+        rule = get_load_class(w.load_class).waste_rule
+        if not rule.startswith("overrun"):
+            continue
+        n = int(rule.partition(":")[2]) * 60_000
+        on_ts = max(ts for ts, value in on_states[w.load_id] if value == 1.0 and ts <= w.start_ts_utc)
+        assert w.start_ts_utc >= on_ts + n, (w, on_ts)
+
+
+@pytest.mark.parametrize("archetype", ARCHETYPES)
+@settings(max_examples=10, deadline=None)
+@given(seed=SEEDS)
+def test_labelled_person_is_awake_at_home_and_doing_that_activity(archetype, seed):
+    """Every label that names a person is an actor at its command's minute m (see PersonNow.acting):
+    awake at home at m, doing the label's activity; or, at a transition minute, awake at home at m-1
+    (fell asleep, left a room or left home at m), with the label's activity from m-1."""
+    spec = _spec(seed, archetype)
+    result = simulate_home(spec)
+    manifest, household, rooms, acts, act_names = _build_grids(spec)
+    start_ms = local_midnight_utc_ms(spec.start_date, CITIES[spec.city].tz_offset_min)
+    index_of = {m.person_id: i for i, m in enumerate(household.members)}
+    events = {e.event_id: e for e in result.events}
+
+    def awake_home(i, m):
+        return rooms[i][m] >= 0 and act_names[acts[i][m]] != "sleep"
+
+    def is_actor(i, m, lb):
+        """Actor at minute m: awake at home doing lb's activity, or a transition at m."""
+        if awake_home(i, m):
+            return lb.activity == act_names[acts[i][m]]
+        return m >= 1 and awake_home(i, m - 1) and lb.activity == act_names[acts[i][m - 1]]
+
+    state_ts: dict[str, list[int]] = defaultdict(list)  # load -> sorted timestamps of its states
+    for e in result.events:
+        if e.kind == EventKind.state:
+            state_ts[e.load_id].append(e.ts_utc)
+    for ts_list in state_ts.values():
+        ts_list.sort()
+
+    for lb in result.labels:
+        if lb.person_id is None:
+            continue
+        ev = events[lb.event_id]
+        # The command's minute is its timestamp's minute. Serial order can push a command just past a
+        # boundary (within 5 s) when the load's previous state sits in the tick minute, or was itself
+        # pushed into the timestamp's minute: then the tick is the minute before, and the person must
+        # be an actor there.
+        minute = min((ev.ts_utc - start_ms) // MS_PER_MIN, len(acts[0]) - 1)
+        i = index_of[lb.person_id]
+        if is_actor(i, minute, lb):
+            continue
+        ts_list = state_ts[ev.load_id]
+        k = bisect_left(ts_list, ev.ts_utc)
+        prev_ts = ts_list[k - 1] if k else None
+        pushed = (
+            minute >= 1
+            and (ev.ts_utc - start_ms) % MS_PER_MIN < 5_000
+            and prev_ts is not None
+            and start_ms + (minute - 1) * MS_PER_MIN <= prev_ts < start_ms + (minute + 1) * MS_PER_MIN
+        )
+        assert pushed and is_actor(i, minute - 1, lb), ("not an actor", lb)

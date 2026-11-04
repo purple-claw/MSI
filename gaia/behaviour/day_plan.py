@@ -2,7 +2,8 @@
 
 Anchor times (wake, leave, return, sleep) are sampled from the persona. Each
 template block is then placed in order, so every activity starts where the previous
-one ends. Plans are deterministic for a given rng state.
+one ends. Toilet visits are then cut into awake home blocks, after all anchor draws.
+Plans are deterministic for a given rng state.
 """
 
 from dataclasses import dataclass
@@ -16,6 +17,13 @@ MIN_BLOCK = 5
 DAY = 1440
 WAKE_UP = 5  # awake in bed after the leading sleep, before the bath or cook
 WIND_DOWN = 15  # awake in bed right before the final sleep
+TOILET = "toilet"
+TOILET_VISITS = (2, 5)  # visits per awake day, inclusive
+TOILET_MIN, TOILET_MAX = MIN_BLOCK, 6  # visit length in minutes, inclusive: no shorter than a block
+# Blocks a toilet visit never splits: sleeps and the bath, the wake-up and wind-down bookends, fixed
+# rest, meals (a meal is one sitting) and cooking.
+_NOT_HOST = frozenset({"sleep", "away", "bath", TOILET, "wake_up", "wind_down", "rest",
+                       "breakfast", "lunch", "dinner", "cook"})
 
 
 @dataclass(frozen=True)
@@ -126,7 +134,62 @@ def plan_day(persona: Persona, day_type: DayType, rng: np.random.Generator) -> l
             blocks = _professional_leisure(wake, sleep, wake)
     else:
         raise ValueError(f"unknown persona role: {persona.role!r}")
-    return _place(blocks)
+    return _insert_toilets(_place(blocks), rng)
+
+
+def _insert_toilets(acts: list[Activity], rng: np.random.Generator) -> list[Activity]:
+    """Cut 2-5 toilet visits out of awake home blocks. A visit takes a uniform position over every
+    valid split (see _split_count), so no part is shorter than MIN_BLOCK. A visit with no host
+    long enough is skipped."""
+    count = int(rng.integers(TOILET_VISITS[0], TOILET_VISITS[1] + 1))
+    for _ in range(count):
+        dur = int(rng.integers(TOILET_MIN, TOILET_MAX + 1))
+        hosts = [(i, _split_count(a.end_min - a.start_min - dur)) for i, a in enumerate(acts)
+                 if a.room is not None and a.name not in _NOT_HOST and not _beside_visit(acts, i)]
+        hosts = [(i, n) for i, n in hosts if n]
+        total = sum(n for _, n in hosts)
+        if not total:
+            continue
+        pick = int(rng.integers(total))
+        for i, n in hosts:
+            if pick < n:
+                break
+            pick -= n
+        host = acts[i]
+        rest = host.end_min - host.start_min - dur
+        before = _split_at(rest, pick)
+        cut = host.start_min + before
+        new = [Activity(TOILET, "own_bathroom", cut, cut + dur)]
+        if before:
+            new.insert(0, Activity(host.name, host.room, host.start_min, cut))
+        if rest - before:
+            new.append(Activity(host.name, host.room, cut + dur, host.end_min))
+        acts[i:i + 1] = new
+    return acts
+
+
+def _beside_visit(acts: list[Activity], i: int) -> bool:
+    """True when a toilet visit touches block i, so cutting block i would join two visits."""
+    return any(0 <= j < len(acts) and acts[j].name == TOILET for j in (i - 1, i + 1))
+
+
+def _split_count(rest: int) -> int:
+    """How many valid 'minutes before the visit' a host with ``rest`` minutes left over has.
+    Valid: 0 or >= MIN_BLOCK before, and 0 or >= MIN_BLOCK after. Sorted: 0, 5..rest-5, rest."""
+    if rest == 0:
+        return 1
+    if rest < MIN_BLOCK:
+        return 0
+    return 2 + max(0, rest - 2 * MIN_BLOCK + 1)
+
+
+def _split_at(rest: int, index: int) -> int:
+    """The index-th valid 'minutes before the visit' for ``rest`` (see _split_count)."""
+    if index == 0:
+        return 0
+    if index == _split_count(rest) - 1:
+        return rest
+    return index + MIN_BLOCK - 1
 
 
 def _wake_spec(persona: Persona, day_type: DayType) -> tuple[float, float]:

@@ -1,4 +1,4 @@
-"""Command line entry point: `python -m gaia generate <config.yaml>`."""
+"""Command line entry point: `python -m gaia generate <config.yaml>` and `python -m gaia check <root>`."""
 
 import argparse
 import json
@@ -10,6 +10,7 @@ from pathlib import Path
 
 from gaia.config import RunConfig, home_spec, load_config
 from gaia.engine.sim import simulate_home
+from gaia.quality.check import check_dataset
 from gaia.recorder.parquet import write_home
 
 
@@ -45,8 +46,17 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     gen = sub.add_parser("generate", help="generate home shards from a run config")
     gen.add_argument("config", type=Path, help="path to a run config YAML file")
+    chk = sub.add_parser("check", help="check a generated world; exit 1 on any violation")
+    chk.add_argument("root", type=Path, help="output directory of a run")
     args = parser.parse_args(argv)
     if args.command == "generate":
-        summary = generate(load_config(args.config))
+        cfg = load_config(args.config)
+        summary = generate(cfg)
+        report = check_dataset(cfg.out_dir)
+        (Path(cfg.out_dir) / "check.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
+        summary["check_ok"] = report["ok"]
         print(json.dumps(summary))
-    return 0
+        return 0 if report["ok"] else 1
+    report = check_dataset(args.root)
+    print(json.dumps(report, indent=1))
+    return 0 if report["ok"] else 1

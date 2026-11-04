@@ -1,8 +1,12 @@
 from dataclasses import replace
 from datetime import date
 
+import pytest
+
 from gaia.engine.sim import HomeSpec, _Run, simulate_home
-from gaia.home.archetypes import APARTMENTS, ARCHETYPES
+from gaia.engine.actuator import Intent
+from gaia.policies import POLICY_ORDER, Lighting
+from gaia.home.archetypes import ARCHETYPE_SPECS, ARCHETYPES
 from gaia.household.personas import Household, make_household
 from gaia.rng import rng_for
 from gaia.schema.events import EventKind
@@ -21,7 +25,7 @@ def test_produces_events_and_context():
 
 def test_deterministic():
     a, b = simulate_home(_spec(5)), simulate_home(_spec(5))
-    assert a.events == b.events and a.gt_cause == b.gt_cause
+    assert a.events == b.events and a.labels == b.labels and a.gt_waste == b.gt_waste
 
 
 def test_lights_on_after_sunset_not_noon():
@@ -36,7 +40,7 @@ def test_last_awake_leaver_never_leaves_light_silently_on():
     spec = HomeSpec(home_id="h1", home_seed=3, city="hyderabad", archetype="apartment_2bhk",
                     start_date=date(2026, 11, 2), days=1, festivals=frozenset())
     manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
-    household = make_household(manifest, APARTMENTS[spec.archetype], rng_for(spec.home_seed, "household"))
+    household = make_household(manifest, ARCHETYPE_SPECS[spec.archetype], rng_for(spec.home_seed, "household"))
     a, b = household.members[0], household.members[1]
     assert a.bedroom == b.bedroom == "bedroom_1"
     index = {r.room_id: i for i, r in enumerate(manifest.rooms)}
@@ -73,7 +77,7 @@ def test_bedroom_light_and_sleep_causes_over_a_month():
             main_ids = {ld.load_id for ld in r.manifest.loads if ld.is_main_light}
             bedroom_on += sum(1 for e in r.events if e.kind == EventKind.command and e.value == 1.0
                               and e.room_type == "bedroom" and e.load_id in main_ids)
-            sleep_causes += sum(1 for c in r.gt_cause if c.cause == "sleep")
+            sleep_causes += sum(1 for lb in r.labels if lb.trigger == "sleep")
     assert bedroom_on > 0
     assert sleep_causes > 0
 
@@ -85,7 +89,7 @@ def test_only_the_last_awake_leaver_decides_the_exit():
     spec = HomeSpec(home_id="h1", home_seed=3, city="hyderabad", archetype="apartment_2bhk",
                     start_date=date(2026, 11, 2), days=1, festivals=frozenset())
     manifest = ARCHETYPES[spec.archetype](spec.home_id, spec.city, rng_for(spec.home_seed, "home"))
-    household = make_household(manifest, APARTMENTS[spec.archetype], rng_for(spec.home_seed, "household"))
+    household = make_household(manifest, ARCHETYPE_SPECS[spec.archetype], rng_for(spec.home_seed, "household"))
     a, b = household.members[0], household.members[1]
     a = replace(a, persona=replace(a.persona, forgetfulness=0.0))
     b = replace(b, persona=replace(b.persona, forgetfulness=1.0))
@@ -103,25 +107,26 @@ def test_only_the_last_awake_leaver_decides_the_exit():
 
     exit_ts = local_midnight_utc_ms(spec.start_date, 330) + 50 * 60_000
     load = manifest.main_light("h1:bedroom_1").load_id
-    assert not any(c.cause == "leave_room" and c.person_id == a.person_id for c in run.gt_cause)
+    assert not any(lb.trigger == "room_exit" and lb.person_id == a.person_id for lb in run.labels)
     assert [(w.person_id, w.start_ts_utc) for w in run.gt_waste if w.load_id == load] == [
         (b.person_id, exit_ts)]
 
 
 def test_protocol_latency_does_not_shift_interaction_draws(monkeypatch):
-    import gaia.engine.sim as sim_mod
+    import gaia.engine.actuator as actuator_mod
 
     spec = HomeSpec(home_id="h1", home_seed=21, city="hyderabad", archetype="apartment_2bhk",
                     start_date=date(2026, 11, 2), days=3, festivals=frozenset())
 
     def command_tuples(result):
-        # In switch order (gt_cause), so command timestamps, which depend on latency, do not matter.
+        # In label order (one label per command), so command timestamps, which depend on latency,
+        # do not matter.
         by_id = {e.event_id: e for e in result.events if e.kind == EventKind.command}
-        return [(by_id[c.event_id].load_id, by_id[c.event_id].source, by_id[c.event_id].value)
-                for c in result.gt_cause]
+        return [(by_id[lb.event_id].load_id, by_id[lb.event_id].source, by_id[lb.event_id].value)
+                for lb in result.labels]
 
     real = command_tuples(simulate_home(spec))
-    monkeypatch.setattr(sim_mod, "latency_ms", lambda protocol, rng: 100)
+    monkeypatch.setattr(actuator_mod, "latency_ms", lambda protocol, rng: 100)
     stubbed = command_tuples(simulate_home(spec))
     assert real and stubbed == real
 
@@ -142,3 +147,43 @@ def test_presence_runs_tile_the_range_per_person():
             assert a.end_ts_utc == b.start_ts_utc, (a, b)  # no gaps, no overlaps
             assert (a.room_id, a.asleep) != (b.room_id, b.asleep), (a, b)  # maximal runs
         assert all(p.end_ts_utc > p.start_ts_utc for p in runs)
+
+
+class _FanProbe:
+    """Emits on/off intents on a fan that no other policy touches."""
+
+    name = "fan_probe"
+
+    def tick(self, ctx, rng):
+        if ctx.minute % 37:
+            return []
+        fan = next(ld.load_id for ld in ctx.manifest.loads if ld.load_class == "fan.ceiling")
+        on = not ctx.devices.is_on(fan)
+        return [Intent(load_id=fan, capability="power", value=1.0 if on else 0.0,
+                       person_id=ctx.people[0].person_id, activity="living",
+                       intent="thermal_comfort", trigger="activity_start",
+                       device_action="turn_on" if on else "turn_off", policy=self.name)]
+
+
+def test_policy_stream_isolation():
+    spec = HomeSpec(home_id="h1", home_seed=17, city="hyderabad", archetype="apartment_3bhk",
+                    start_date=date(2026, 11, 2), days=3, festivals=frozenset())
+    # Notice is left out: it switches off waste on every load, so a fan's open waste changes its draws.
+    # Its isolation is covered by tests/policies/test_notice.py.
+    order = [cls for cls in POLICY_ORDER if cls.name != "notice"]
+    base = simulate_home(spec, policy_order=order)
+    probed = simulate_home(spec, policy_order=[*order, _FanProbe])
+    lights = {ld.load_id for ld in base.manifest.loads if ld.is_main_light}
+    assert any(e.load_id not in lights for e in probed.events)  # the probe really emitted
+    assert [e for e in probed.events if e.load_id in lights] == [e for e in base.events if e.load_id in lights]
+    assert [lb for lb in probed.labels if lb.source_ref == "lighting"] == [
+        lb for lb in base.labels if lb.source_ref == "lighting"]
+    assert [w for w in probed.gt_waste if w.load_id in lights] == [
+        w for w in base.gt_waste if w.load_id in lights]
+
+
+def test_policy_names_must_be_unique():
+    spec = HomeSpec(home_id="h1", home_seed=3, city="hyderabad", archetype="apartment_2bhk",
+                    start_date=date(2026, 11, 2), days=1, festivals=frozenset())
+    with pytest.raises(ValueError, match="unique"):
+        simulate_home(spec, policy_order=[Lighting, Lighting])

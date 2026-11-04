@@ -66,6 +66,6 @@ def test_worker_count_does_not_change_any_shard_file(tmp_path):
     digests_one = _all_file_digests(tmp_path / "one")
     assert len(list((tmp_path / "one").glob("world=g1/split=train/home=*"))) == 4
     assert {p.rsplit("/", 1)[-1] for p in digests_one} >= {
-        "events.parquet", "context.parquet", "gt_cause.parquet", "gt_waste.parquet",
+        "events.parquet", "context.parquet", "labels.parquet", "gt_waste.parquet",
         "gt_presence.parquet", "manifest.json"}
     assert digests_one == _all_file_digests(tmp_path / "two")

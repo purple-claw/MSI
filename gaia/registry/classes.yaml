@@ -1,0 +1,632 @@
+# GAIA load-class registry v1. Data only; loaded by gaia/registry/registry.py.
+#
+# Fields per class:
+#   domain, matter_device_type (null if no Matter device type), capabilities,
+#   power_w (state -> watts; keys on | standby | active), power_source
+#   (URL, or the literal `assumption`), waste_rule (unattended | unattended:<grace min> | overrun:<min> | none),
+#   rooms, sleeper_counts_as_attended (optional, default false: a sleeping occupant counts as
+#   attending the load for the waste rule), and per capability an optional `initial` (the stored
+#   value before any command; checked against values or lo..hi). Without it an enum starts at its
+#   first value and a number at lo (0 for the 0-1 kinds).
+# Capability kinds: binary (implicit 0/1), level/position/tilt/hue/saturation (0-1),
+#   kelvin/celsius/count (explicit lo/hi), enum (values), event.
+# Where the research gives a range, the value is the midpoint and the range is in a comment.
+# Power numbers: power_source is the URL of the research figure (research §3,
+# .superpowers/research/g2-load-taxonomy.md) for the five sourced classes, else `assumption`.
+# Where a class has a URL source but a power key is not from that source, a comment says so.
+
+# ---------- Lighting ----------
+# assumption: capability ranges and power_w unless power_source is a URL
+
+light.onoff:
+  domain: lighting
+  matter_device_type: on_off_light
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 12}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [passage, bathroom, store, balcony, kitchen]
+
+light.dimmable:
+  domain: lighting
+  matter_device_type: dimmable_light
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: level, kind: level, lo: 0, hi: 1}
+  power_w: {"on": 10}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living, bedroom, dining, kitchen]
+
+light.tunable:
+  domain: lighting
+  matter_device_type: color_temperature_light
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: level, kind: level, lo: 0, hi: 1}
+    # Retail Hue White Ambiance is ~2200-6500 K (research §3.1); 2700-6500 K is the design choice.
+    - {name: cct, kind: kelvin, lo: 2700, hi: 6500, unit: K}
+  power_w: {"on": 10}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living, bedroom, dining, study, kitchen]
+
+light.rgbw:
+  domain: lighting
+  matter_device_type: extended_color_light
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: level, kind: level, lo: 0, hi: 1}
+    - {name: hue, kind: hue, lo: 0, hi: 1}
+    - {name: saturation, kind: saturation, lo: 0, hi: 1}
+  power_w: {"on": 15}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living, bedroom]
+
+light.rgbcct:
+  domain: lighting
+  matter_device_type: extended_color_light
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: level, kind: level, lo: 0, hi: 1}
+    - {name: hue, kind: hue, lo: 0, hi: 1}
+    - {name: saturation, kind: saturation, lo: 0, hi: 1}
+    - {name: cct, kind: kelvin, lo: 2700, hi: 6500, unit: K}
+  power_w: {"on": 18}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living, bedroom, dining]
+
+light.led_strip:
+  domain: lighting
+  matter_device_type: extended_color_light
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: level, kind: level, lo: 0, hi: 1}
+    - {name: hue, kind: hue, lo: 0, hi: 1}
+    - {name: saturation, kind: saturation, lo: 0, hi: 1}
+  power_w: {"on": 12}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living, kitchen, bedroom]
+
+light.festival:
+  domain: lighting
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: hue, kind: hue, lo: 0, hi: 1}
+    - {name: saturation, kind: saturation, lo: 0, hi: 1}
+  power_w: {"on": 20}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [balcony, facade, terrace, gate]
+
+# ---------- Media ----------
+# assumption: capability ranges and power_w unless power_source is a URL
+
+media.tv:
+  domain: media
+  matter_device_type: basic_video_player
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
+    - {name: volume, kind: level, lo: 0, hi: 1}
+    - {name: mute, kind: binary}
+  power_w: {"on": 120, standby: 0.5}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living, bedroom]
+
+media.stb_dth:
+  domain: media
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
+  # Tata Sky guide: 18 W in use, 17 W standby (Tier C, not measured).
+  # waste_rule none: at TV-off the box goes to standby (power 0), which is counted through standby.
+  power_w: {"on": 18, standby: 17}
+  power_source: https://www.downtoearth.org.in/amp/story/environment/confusing-signal-38433
+  waste_rule: none
+  rooms: [living, bedroom]
+
+media.streamer:
+  domain: media
+  matter_device_type: basic_video_player
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
+    - {name: volume, kind: level, lo: 0, hi: 1}
+    - {name: mute, kind: binary}
+  power_w: {"on": 6, standby: 0.5}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living, bedroom]
+
+media.speaker:
+  domain: media
+  matter_device_type: speaker
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
+    - {name: volume, kind: level, lo: 0, hi: 1}
+    - {name: mute, kind: binary}
+  # Sonos Arc idle draw 4.3 W at 120 V (Tier A). Playback draw is unsourced, so no `on` entry.
+  # standby 4.3 W: Sonos idle draw, https://support.sonos.com/en/article/sonos-power-consumption-while-idle (Tier A).
+  # on 20 W is an assumption. Mixed class, so power_source stays `assumption`.
+  power_w: {"on": 20, standby: 4.3}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living, bedroom]
+
+media.soundbar:
+  domain: media
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
+    - {name: volume, kind: level, lo: 0, hi: 1}
+    - {name: mute, kind: binary}
+  power_w: {"on": 40, standby: 0.5}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living]
+
+media.av_receiver:
+  domain: media
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
+    - {name: volume, kind: level, lo: 0, hi: 1}
+    - {name: mute, kind: binary}
+  power_w: {"on": 120, standby: 0.5}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living]
+
+media.projector:
+  domain: media
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
+  power_w: {"on": 280, standby: 0.5}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living]
+
+media.screen_motorised:
+  domain: media
+  matter_device_type: null
+  capabilities:
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=down, 0=rolled up"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 30}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living]
+
+# ---------- Climate and air ----------
+# assumption: capability ranges and power_w unless power_source is a URL
+
+climate.split_ac:
+  domain: climate
+  matter_device_type: room_air_conditioner
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: mode, kind: enum, values: [cool, dry, fan, auto]}
+    # setpoint 16-30 C is an assumption (research §3.3 has no sourced range).
+    - {name: setpoint, kind: celsius, lo: 16, hi: 30, unit: C}
+    - {name: fan_speed, kind: count, lo: 1, hi: 5}
+  # 1.5 T inverter: Blue Star IA518DXU rated cooling input 1315 W (Tier B). Used as `on` peak draw.
+  power_w: {"on": 1315}
+  power_source: https://ankurelectricals.com/products/bluestar-1-5-ton-5-star-inverter-split-air-conditioner
+  waste_rule: unattended
+  sleeper_counts_as_attended: true
+  rooms: [bedroom, living, dining, study]
+
+climate.vrf_indoor:
+  domain: climate
+  matter_device_type: room_air_conditioner
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: mode, kind: enum, values: [cool, dry, fan, auto]}
+    - {name: setpoint, kind: celsius, lo: 16, hi: 30, unit: C}
+    - {name: fan_speed, kind: count, lo: 1, hi: 5}
+  power_w: {"on": 60}
+  power_source: assumption
+  waste_rule: unattended
+  sleeper_counts_as_attended: true
+  rooms: [bedroom, living]
+
+climate.cassette_ac:
+  domain: climate
+  matter_device_type: room_air_conditioner
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: mode, kind: enum, values: [cool, dry, fan, auto]}
+    - {name: setpoint, kind: celsius, lo: 16, hi: 30, unit: C}
+    - {name: fan_speed, kind: count, lo: 1, hi: 5}
+  power_w: {"on": 1500}
+  power_source: assumption
+  waste_rule: unattended
+  sleeper_counts_as_attended: true
+  rooms: [living, dining]
+
+fan.bldc_ceiling:
+  domain: climate
+  matter_device_type: fan
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: fan_speed, kind: count, lo: 1, hi: 5}
+  # BEE 5-star BLDC range 26.9-35.42 W (VOICE test, Tier C). Midpoint of the 26-35 W range.
+  power_w: {"on": 30}
+  power_source: https://www.bajajelectricals.com/blogs/fans/bldc-fan-motor-star-rating-explained
+  waste_rule: unattended
+  sleeper_counts_as_attended: true
+  rooms: [bedroom, living, dining, kitchen]
+
+fan.ceiling:
+  domain: climate
+  matter_device_type: fan
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: fan_speed, kind: count, lo: 1, hi: 5}
+  # Conventional fan 55-75 W (Bajaj blog, Tier C). Midpoint 65 W; not in the brief's sourced list, so assumption.
+  power_w: {"on": 65}
+  power_source: assumption
+  waste_rule: unattended
+  sleeper_counts_as_attended: true
+  rooms: [bedroom, living, dining, kitchen]
+
+fan.exhaust:
+  domain: climate
+  matter_device_type: fan
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 40}
+  power_source: assumption
+  waste_rule: unattended:15
+  rooms: [bathroom, kitchen]
+
+air.purifier:
+  domain: climate
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: mode, kind: enum, values: [auto, sleep, manual]}
+    - {name: fan_speed, kind: count, lo: 1, hi: 3}
+  power_w: {"on": 45, standby: 1}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [bedroom, living]
+
+air.dehumidifier:
+  domain: climate
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 250}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [bedroom, utility]
+
+# ---------- Shading ----------
+# assumption: capability ranges and power_w (no URL sources in this group)
+# Position and tilt are normalised 0-1. Direction is set per capability in `semantics`,
+# because vendors do not standardise it.
+
+shade.curtain:
+  domain: shading
+  matter_device_type: window_covering
+  capabilities:
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=open, 0=closed"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 40}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living, bedroom]
+
+shade.roller:
+  domain: shading
+  matter_device_type: window_covering
+  capabilities:
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=open, 0=closed"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 30}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living, bedroom]
+
+shade.venetian:
+  domain: shading
+  matter_device_type: window_covering
+  capabilities:
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=open, 0=closed"}
+    - {name: tilt, kind: tilt, lo: 0, hi: 1, semantics: "1=slats open, 0=slats closed"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 30}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living, bedroom]
+
+shade.skylight:
+  domain: shading
+  matter_device_type: window_covering
+  capabilities:
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=open, 0=closed"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 40}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living, kitchen]
+
+# ---------- Water, kitchen, utility ----------
+# assumption: capability ranges and power_w unless power_source is a URL
+
+water.geyser:
+  domain: water
+  matter_device_type: on_off_plug_in_unit
+  capabilities:
+    - {name: power, kind: binary}
+  # 15 L storage geyser, 2000 W at 230-240 V (several Croma listings, Tier B).
+  power_w: {"on": 2000}
+  power_source: https://croma.com/orient-aquator-15-litres-5-star-storage-water-geyser-2000-watts-swas15vpgm2-wh-white-/p/246003
+  waste_rule: overrun:60
+  rooms: [bathroom]
+
+water.pump:
+  domain: water
+  matter_device_type: pump
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 750}
+  power_source: assumption
+  waste_rule: none
+  rooms: [bathroom]
+
+water.ro_purifier:
+  domain: water
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 60}
+  power_source: assumption
+  waste_rule: none
+  rooms: [kitchen]
+
+kitchen.chimney:
+  domain: kitchen
+  matter_device_type: fan
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: fan_speed, kind: count, lo: 1, hi: 3}
+  power_w: {"on": 200}
+  power_source: assumption
+  waste_rule: unattended:10
+  rooms: [kitchen]
+
+kitchen.dishwasher:
+  domain: kitchen
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 1200}
+  power_source: assumption
+  waste_rule: none
+  rooms: [kitchen]
+
+laundry.washing_machine:
+  domain: laundry
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 500}
+  power_source: assumption
+  waste_rule: none
+  rooms: [bathroom]
+
+power.inverter_ups:
+  domain: power
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 10, standby: 8}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living]
+
+ev.charger:
+  domain: ev
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+    # Current 6-32 A is the usual single-phase EVSE range (assumption).
+    - {name: current, kind: count, lo: 6, hi: 32, unit: A}
+  power_w: {"on": 7400}
+  power_source: assumption
+  waste_rule: none
+  rooms: [parking]
+
+plug.smart:
+  domain: power
+  matter_device_type: on_off_plug_in_unit
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 100}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living, bedroom, kitchen]
+
+misc.mosquito_repellent:
+  domain: misc
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 5}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [bedroom, living]
+
+# ---------- Security and access ----------
+# assumption: capability ranges and power_w unless power_source is a URL
+
+lock.smart:
+  domain: security
+  matter_device_type: door_lock
+  capabilities:
+    - {name: state, kind: enum, values: [locked, unlocked]}
+  power_w: {"on": 2, standby: 0.1}
+  power_source: assumption
+  waste_rule: none
+  rooms: [entrance]
+
+doorbell.video:
+  domain: security
+  matter_device_type: null
+  capabilities:
+    - {name: press, kind: event}
+  power_w: {"on": 2, standby: 2}
+  power_source: assumption
+  waste_rule: none
+  rooms: [entrance]
+
+gate.motor:
+  domain: security
+  matter_device_type: null
+  capabilities:
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=open, 0=closed"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 100}
+  power_source: assumption
+  waste_rule: none
+  rooms: [outdoor]
+
+cctv.camera:
+  domain: security
+  matter_device_type: null
+  capabilities:
+    - {name: power, kind: binary}
+    - {name: motion, kind: event}
+  power_w: {"on": 8}
+  power_source: assumption
+  waste_rule: none
+  rooms: [entrance, balcony]
+
+# ---------- Sensors (zero modelled draw) ----------
+# assumption: capability ranges and power_w unless power_source is a URL
+
+sensor.motion:
+  domain: sensing
+  matter_device_type: occupancy_sensor
+  capabilities:
+    - {name: occupancy, kind: binary}
+  power_w: {"on": 0}
+  power_source: assumption
+  waste_rule: none
+  rooms: [balcony, bathroom, dining, dressing, garden, home_theatre, kitchen, living, lobby, passage, pooja, staircase, study, terrace, utility]
+
+sensor.presence:
+  domain: sensing
+  matter_device_type: occupancy_sensor
+  capabilities:
+    - {name: occupancy, kind: binary}
+  power_w: {"on": 0}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living, bedroom, study]
+
+sensor.contact:
+  domain: sensing
+  matter_device_type: contact_sensor
+  capabilities:
+    - {name: contact, kind: binary, semantics: "1 = open, 0 = closed"}
+  power_w: {"on": 0}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living, lobby]
+
+sensor.temperature:
+  domain: sensing
+  matter_device_type: temperature_sensor
+  capabilities:
+    - {name: temperature, kind: celsius, lo: -10, hi: 50, unit: C}
+  power_w: {"on": 0}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living, bedroom]
+
+sensor.humidity:
+  domain: sensing
+  matter_device_type: humidity_sensor
+  capabilities:
+    # 0-1 is 0-100 %RH.
+    - {name: humidity, kind: level, lo: 0, hi: 1}
+  power_w: {"on": 0}
+  power_source: assumption
+  waste_rule: none
+  rooms: [bedroom]
+
+sensor.lux:
+  domain: sensing
+  matter_device_type: light_sensor
+  capabilities:
+    - {name: illuminance, kind: count, lo: 0, hi: 100000, unit: lx}
+  power_w: {"on": 0}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living]
+
+sensor.co2:
+  domain: sensing
+  matter_device_type: null
+  capabilities:
+    - {name: co2, kind: count, lo: 400, hi: 5000, unit: ppm}
+  power_w: {"on": 0}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living, bedroom]
+
+sensor.water_leak:
+  domain: sensing
+  matter_device_type: null
+  capabilities:
+    - {name: wet, kind: binary}
+  power_w: {"on": 0}
+  power_source: assumption
+  waste_rule: none
+  rooms: [kitchen, bathroom]
+
+meter.energy:
+  domain: sensing
+  matter_device_type: null
+  capabilities:
+    - {name: active_power, kind: count, lo: 0, hi: 15000, unit: W}
+    - {name: energy, kind: count, lo: 0, hi: 1000000, unit: Wh}
+  power_w: {"on": 0}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living, utility]
+
+# ---------- Keypads ----------
+# assumption: capability ranges and power_w unless power_source is a URL
+
+keypad.scene:
+  domain: keypad
+  matter_device_type: null
+  capabilities:
+    - {name: press, kind: event}
+  power_w: {"on": 0}
+  power_source: assumption
+  waste_rule: none
+  rooms: [living, bedroom, kitchen]

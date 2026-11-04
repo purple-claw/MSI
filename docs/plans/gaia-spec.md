@@ -191,7 +191,7 @@ A library of time-bounded modifiers on the plan generator. Some examples:
 | `value`, `prev_value` | string | normalised (0–1 for levels, °C for setpoint). Stored as strings: floats via Python `repr(float)`, e.g. `"1.0"` |
 | `source` | enum | `wall`, `app`, `voice`, `homekit`, `scene`, `schedule`, `msi`, `system`, `unknown` |
 | `actor` | string | user id or role if known, else `unknown` |
-| `protocol` | enum | `knx`, `matter`, `zigbee`, `wifi`, `other`. Never used as a model feature by default. |
+| `protocol` | enum | `knx`, `matter`, `zigbee`, `wifi`, `lutron`, `dali`, `ip`, `ir`, `other`. Never used as a model feature by default. |
 | `ref_id` | string | links an echo to its command, a scene member to its scene, feedback to a proposal |
 | `domain` | enum | `synthetic` / `real` / `public` (for audit) |
 
@@ -199,8 +199,11 @@ The context stream (per home, per minute): outdoor temperature and humidity, out
 tariff band, plus any real sensors present.
 
 ### 4.2 Ground-truth tables (synthetic only, never available on the board)
-- `gt_cause` per event: cause, person, activity. G1 causes are `need_light`, `leave_room`, `sleep` and `forgot_cleanup`; the others (`need`, `routine:<id>`, `scene`, `schedule`, `forgot`, `accident`, `guest`, `help_staff`, `msi`, `protocol_noise`) arrive in G2.
-- `gt_waste`: `load_id`, `person_id`, `start_ts_utc`, `end_ts_utc` (null if open at the end of the run). A main light is on while no awake member is in its room. Intervals shorter than 60 s are not emitted.
+- `labels` (labels v1, replaces G1 `gt_cause`): one row per command and sensor event: `event_id`, `person_id`,
+  `room_id`, `activity`, `intent`, `trigger`, `device_action`, `provenance`, `confidence`, `source_ref` (the policy),
+  `schema_version`, `clamped`. Every value comes from `gaia/labels/schema.yaml`; provenance is `sim_truth`, `sim_rule`,
+  `heuristic_lf`, `model_inferred`, `human` or `imported_public`, so real and public data share the same table.
+- `gt_waste`: `load_id`, `load_class`, `person_id`, `start_ts_utc`, `end_ts_utc` (null if open at the end of the run). Each class has a waste rule in the registry (`unattended[:N]`, `overrun:N`, `none`). Intervals shorter than 60 s are not emitted.
 - `gt_presence`: `person_id`, `room_id` (null = away), `start_ts_utc`, `end_ts_utc`, `asleep`. Maximal runs of constant room and sleep state per person, tiling the whole run.
 - `gt_routines`: each person's latent routines (the answer key for routine discovery).
 - `gt_drift`: life-event intervals.
@@ -251,11 +254,13 @@ Real data is precious but thin, so GAIA grows it:
 | next event (what) | events |
 | time to next event (when) | events |
 | routine discovery | `gt_routines` |
-| intent and cause classification | `gt_cause` |
+| activity, intent, trigger and action classification | `labels` |
 | forgotten or wasted load detection | `gt_waste` |
 | drift detection | `gt_drift` |
 | proposal acceptance | MSI response layer |
 | cold start (first 1/3/7/14 days) | time split |
+
+`python -m gaia check <root>` validates a world (0 violations required) and reports its quality stats.
 
 Splits: **leave-homes-out** (the main one), future-time, unseen archetype, unseen city/climate, unseen protocol mix, sensor-poor only.
 

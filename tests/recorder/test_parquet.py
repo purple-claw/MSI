@@ -24,8 +24,10 @@ def test_roundtrip_event_count(tmp_path):
     assert shard == shard_dir(tmp_path, "g1", "train", "h1")
     assert pq.read_table(shard / "events.parquet").num_rows == len(result.events)
     assert pq.read_table(shard / "context.parquet").num_rows == len(result.context)
-    assert pq.read_table(shard / "gt_cause.parquet").num_rows == len(result.gt_cause)
-    assert pq.read_table(shard / "gt_waste.parquet").num_rows == len(result.gt_waste)
+    assert pq.read_table(shard / "labels.parquet").num_rows == len(result.labels)
+    waste = pq.read_table(shard / "gt_waste.parquet")
+    assert waste.num_rows == len(result.gt_waste)
+    assert "load_class" in waste.column_names
     assert pq.read_table(shard / "gt_presence.parquet").num_rows == len(result.gt_presence)
     manifest = json.loads((shard / "manifest.json").read_text())
     assert manifest["world_version"] == "g1"
@@ -58,3 +60,13 @@ def test_manifest_records_seed_dates_and_festivals(tmp_path):
     assert manifest["start_date"] == "2026-11-02"
     assert manifest["days"] == 2
     assert manifest["festivals"] == ["2026-11-03", "2026-11-04"]
+
+
+def test_labels_parquet_written_even_when_empty(tmp_path):
+    result = _result()
+    result.labels.clear()
+    shard = write_home(result, tmp_path, "g1", "train")
+    table = pq.read_table(shard / "labels.parquet")
+    assert table.num_rows == 0
+    assert "intent" in table.column_names and "source_ref" in table.column_names
+    assert not (shard / "gt_cause.parquet").exists()
