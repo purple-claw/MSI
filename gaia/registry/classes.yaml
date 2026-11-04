@@ -392,7 +392,7 @@ water.pump:
     - {name: power, kind: binary}
   power_w: {"on": 750}
   power_source: assumption
-  waste_rule: unattended
+  waste_rule: none
   rooms: [bathroom]
 
 water.ro_purifier:

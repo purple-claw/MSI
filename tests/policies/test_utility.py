@@ -154,6 +154,26 @@ def test_pump_daily():
         assert lb.source_ref == "utility"
 
 
+def test_pump_run_lasts_its_full_duration_with_notice_on():
+    # Scheduled utility loads are not waste (water.pump, water.ro_purifier and laundry.washing_machine
+    # are waste_rule none), so the full policy order, notice included, never cuts a pump run short.
+    spec = HomeSpec(home_id="h1", home_seed=3, city="hyderabad", archetype="villa",
+                    start_date=MONDAY, days=3, festivals=frozenset())
+    result = simulate_home(spec)
+    pump = _household("villa", 3)[0]
+    pump = _load(pump, "water.pump", "h1:utility")
+    labels = {lb.event_id: lb for lb in result.labels}
+    pump_events = {e.event_id for e in result.events if e.load_id == pump}
+    assert not [lb for lb in result.labels if lb.intent == "noticed_waste" and lb.event_id in pump_events]
+    cmds = [e for e in result.events if e.kind == EventKind.command and e.load_id == pump]
+    ons = [e for e in cmds if e.value == 1.0]
+    offs = [e for e in cmds if e.value == 0.0]
+    assert ons and len(offs) == len(ons)
+    for on, off in zip(ons, offs):
+        assert labels[off.event_id].intent == "utility" and labels[off.event_id].person_id is None
+        assert 19 <= (off.ts_utc - on.ts_utc) / MIN <= 41
+
+
 def test_washing_machine_runs_two_to_four_times_a_week_in_the_morning_by_the_homemaker():
     manifest, household = _household(ARCH, SEED)
     washer = _load(manifest, "laundry.washing_machine", "h1:kitchen")
