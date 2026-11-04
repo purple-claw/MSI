@@ -20,7 +20,7 @@ MOTION_SLACK_MS = MS_PER_MIN  # sensor timestamps may sit at most a minute off t
 VIOLATIONS = (
     "duplicate_event_id", "non_monotonic_state", "state_without_command",
     "command_label_count", "label_missing_event", "label_enum", "value_out_of_range",
-    "waste_on_off_load", "presence_overlap", "motion_from_sleeper", "empty_home",
+    "waste_on_off_load", "presence_overlap", "motion_from_sleeper", "empty_home", "no_homes",
 )
 
 
@@ -183,6 +183,8 @@ def check_dataset(root: Path) -> dict:
     shards = _shards(root)
     for shard in shards:
         check_home(shard, out, acc)
+    if not shards:  # a wrong path or a failed run must not read as a clean dataset
+        out["violations"]["no_homes"] += 1
 
     def share(c: Counter) -> dict[str, float]:
         n = sum(c.values()) or 1

@@ -3,7 +3,7 @@
 # Room types are the simulator's room vocabulary (gaia/home/archetypes.py _WINDOW).
 rooms:
   - [dressing, dressing]
-  - ['bath|toilet|powder|\bwash|\bwc\b', bathroom]
+  - ['bath|toilet|powder|\bwash ?room|\bwc\b', bathroom]
   - ['theat(re|er)|\bht\b', home_theatre]
   - ['pooja|puja|prayer|mandir', pooja]
   - ['dining', dining]

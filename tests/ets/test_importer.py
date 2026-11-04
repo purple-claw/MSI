@@ -106,3 +106,13 @@ def test_ets_config_and_simulation(tmp_path):
     load_layouts.cache_clear()
     res = simulate_home(home_spec(RunConfig(**base, ets_dir=tmp_path), 0))
     assert res.manifest.archetype == "ets" and res.events
+
+
+def test_null_names_and_kitchen_wash(tmp_path):
+    p = tmp_path / "k.json"
+    p.write_text(json.dumps({"loads": [{"ldNm": None, "ldTyp": "Dimmer"}],
+                             "rooms": [{"name": None, "loads": [1]}]}))
+    assert import_knxdata(p).stats["loads_unmapped_room"] == 1
+    from gaia.ets.importer import room_type_for
+    assert room_type_for("Kitchen Wash Area") == "kitchen"
+    assert room_type_for("Guest Washroom") == "bathroom"

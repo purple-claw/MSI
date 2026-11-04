@@ -118,19 +118,19 @@ def import_knxdata(path: Path, project_id: str | None = None) -> EtsLayout:
     for r_idx, room in enumerate(data.get("rooms", [])):
         for ref in room.get("loads", []):
             owner.setdefault(int(ref) - 1, r_idx)  # KNXdata load refs are 1-based
-    room_names = [r.get("name", "") for r in data.get("rooms", [])]
+    room_names = [r.get("name") or "" for r in data.get("rooms", [])]
 
     groups: dict[tuple[int, str, str], list[tuple[str, str | None, str]]] = defaultdict(list)
     unknown = unmapped = 0
     for i, ld in enumerate(loads):
-        name = ld.get("ldNm", "")
+        name = ld.get("ldNm") or ""
         r_idx = owner.get(i, -1)
         hit = _first(_ROOMS, room_names[r_idx]) if r_idx >= 0 else None
         key_word = "room"
         if hit is None:  # function-grouped or unassigned: use the load's own room word
             hit = _first(_ROOMS, name)
             key_word = hit[1] if hit else ""
-        kind = classify_load(ld.get("ldTyp", ""), name)
+        kind = classify_load(ld.get("ldTyp") or "", name)
         if kind is None:
             unknown += 1
             continue

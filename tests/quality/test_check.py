@@ -54,3 +54,8 @@ def test_cli_check_exit_code(world, tmp_path):
     pq.write_table(pq.read_table(shard).slice(1), shard)
     fail = subprocess.run([*run, str(bad)], cwd=REPO, capture_output=True, text=True, timeout=600)
     assert fail.returncode == 1
+
+
+def test_empty_root_is_a_violation(tmp_path):
+    report = check_dataset(tmp_path)
+    assert report["violations"]["no_homes"] == 1 and not report["ok"]
