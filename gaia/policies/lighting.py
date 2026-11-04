@@ -23,8 +23,10 @@ Every minute:
   most one cct command per 10 minutes unless the light was power-cycled in between.
 
 Light state is the policy's own mirror of the intents it has emitted this tick, so two decisions
-in one minute see each other. A load gets at most one intent per capability per tick, since the
-actuator keeps only the first. Iteration uses dicts (insertion order), never sets.
+in one minute see each other. Each minute the mirror is first reconciled with the device, so a
+light another policy switched off (a notice) is seen as off. A load gets at most one intent per
+capability per tick, since the actuator keeps only the first. Iteration uses dicts (insertion
+order), never sets.
 """
 
 import numpy as np
@@ -102,6 +104,7 @@ class Lighting:
 
     def tick(self, ctx: TickContext, rng: np.random.Generator) -> list[Intent]:
         self._bind(ctx)
+        self._reconcile(ctx)
         self._emitted = set()
         out: list[Intent] = []
         people = ctx.people
@@ -121,6 +124,17 @@ class Lighting:
         if ctx.minute % CCT_CHECK_EVERY == 0:
             self._cct_sweep(ctx, out)
         return out
+
+    def _reconcile(self, ctx) -> None:
+        """Forget lights that another policy switched off (a notice): the mirror follows the device."""
+        for lid in tuple(self._on):
+            if ctx.devices.is_on(lid):
+                continue
+            del self._on[lid]
+            self._cct_last.pop(lid, None)  # a power cycle lifts the cct guard, as in _power
+            room_id = self._loads[lid].room_id
+            if not any(ld.load_id in self._on for ld in self._room_loads[room_id]):
+                self._lit_rooms.pop(room_id, None)
 
     # --- rules ----------------------------------------------------------------
 

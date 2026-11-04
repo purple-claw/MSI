@@ -28,6 +28,9 @@ Home theatre (the room holding a media.projector, media.av_receiver and media.sc
   Nobody is moved into the room in the occupancy grids, so the theatre loads are not waste
   (waste_rule none). The theatre room's lights are left to the lighting policy.
 
+A TV or speaker that another policy switched off (a notice) loses its session or music at the next
+minute: the policy reads the device, so no pause, timer or start acts on a set that is off.
+
 Quiet minutes (no change, no TV session, no timer due) return at once. Within a minute the order is
 fixed, so no load gets two intents that the actuator would drop as duplicates: TV and music ends,
 then starts, then pauses, then timers, then the theatre. Iteration uses dicts and tuples.
@@ -123,6 +126,7 @@ class Media:
 
     def tick(self, ctx: TickContext, rng: np.random.Generator) -> list[Intent]:
         self._bind(ctx)
+        self._reconcile(ctx)
         minute = ctx.minute
         if (not ctx.changed and ctx.local_minute_of_day and not self._sessions
                 and (self._next_timer is None or minute < self._next_timer)):
@@ -140,6 +144,15 @@ class Media:
         self._theatre_step(ctx, out)
         self._next_timer = self._earliest()
         return out
+
+    def _reconcile(self, ctx: TickContext) -> None:
+        """Drop sessions and music whose set was switched off outside this policy (a notice). A
+        stale session would otherwise pause, resume or time out a TV that is off, and the actuator
+        would power it back on."""
+        for load_id in [k for k in self._sessions if not ctx.devices.is_on(k)]:
+            del self._sessions[load_id]
+        for room in [r for r, audio in self._music.items() if not ctx.devices.is_on(audio.load_id)]:
+            del self._music[room]
 
     # --- changed minutes -----------------------------------------------------
 
@@ -354,6 +367,8 @@ class Media:
                 out: list[Intent], intent: str = ENTERTAINMENT) -> None:
         """Send a command only when the device does not already hold the value."""
         current = ctx.devices.get(load.load_id, capability)
+        if capability == "playback" and not ctx.devices.is_on(load.load_id):
+            current = "stopped"  # a set that is off holds no playback, whatever it last played
         if isinstance(value, str):
             if current == value:
                 return

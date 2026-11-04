@@ -20,7 +20,8 @@ Changed minutes (someone's room or sleep state moved), per person in household o
 - Waking up: the AC in the room goes off with p 0.8, unless someone else is in the room.
 
 Exhaust: a fan.exhaust goes on while an occupant does the activity mapped to its room type in
-EXHAUST_ACTIVITY_ROOM, and goes off 5-10 minutes after the activity ends. Each load draws its own
+EXHAUST_ACTIVITY_ROOM (cooking in the kitchen; bathing and toilet visits in a bathroom), and goes
+off 5-10 minutes after the activity ends. Each load draws its own
 timer from the policy rng when the activity ends. At the timer, a forgetful occupant (p =
 forgetfulness * EXHAUST_FORGET_FACTOR) leaves it on; then it stays on until someone next does the
 activity. That forgotten exhaust is the waste the tracker records (unattended:15).
@@ -42,8 +43,8 @@ from gaia.world.season import heat_index
 AC_PREFIX = "climate."
 CEILING_FANS = frozenset({"fan.bldc_ceiling", "fan.ceiling"})
 EXHAUST = "fan.exhaust"
-# Activity -> room type where the exhaust runs. Task 9 adds "toilet": "bathroom".
-EXHAUST_ACTIVITY_ROOM: dict[str, str] = {"cook": "kitchen", "bath": "bathroom"}
+# Activity -> room type where the exhaust runs.
+EXHAUST_ACTIVITY_ROOM: dict[str, str] = {"cook": "kitchen", "bath": "bathroom", "toilet": "bathroom"}
 AC_MODE = "cool"
 AC_FAN_SPEED = 3.0
 AC_COUPLED_FAN_SPEED = 2.0
@@ -238,7 +239,11 @@ class Climate:
                 self._exhaust_persona[ld.room_id] = doer.persona
                 if not on:
                     self._power(ld, True, doer, "air_quality", "activity_start", out)
-            elif on and ld.load_id not in self._exhaust_forgotten:
+            elif not on:
+                # Switched off outside this policy (a notice): no timer or forgotten mark stays behind.
+                self._exhaust_off_at.pop(ld.load_id, None)
+                self._exhaust_forgotten.pop(ld.load_id, None)
+            elif ld.load_id not in self._exhaust_forgotten:
                 timer = self._exhaust_off_at.get(ld.load_id)
                 if timer is None:
                     persona = self._exhaust_persona.get(ld.room_id)

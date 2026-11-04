@@ -38,7 +38,7 @@ def _manifest() -> HomeManifest:
         loads=(
             Load("l_main", "r1", "light.onoff", Protocol.knx, "knx_dali", "main", "bulb"),   # unattended
             Load("l_fan", "r1", "fan.exhaust", Protocol.knx, "knx_dali", "none"),   # unattended:15
-            Load("l_chim", "r1", "kitchen.chimney", Protocol.knx, "knx_dali", "none"),  # overrun:10
+            Load("l_chim", "r1", "water.geyser", Protocol.knx, "knx_dali", "none"),  # overrun:60
             Load("l_shade", "r1", "shade.curtain", Protocol.knx, "knx_dali", "none"),  # none
         ),
     )
@@ -90,12 +90,12 @@ def test_awake_occupied_room_never_opens():
 def test_overrun_opens_n_minutes_after_on_whatever_the_occupancy():
     tracker = WasteTracker(_manifest())
     tracker.on_state("l_chim", T0, True)
-    tracker.on_tick(_Ctx(T0 + 9 * MIN, leavers=(("p1", "r1"),)))
-    tracker.on_tick(_Ctx(T0 + 11 * MIN, awake_rooms=("r1",)))  # occupancy is irrelevant to overrun
-    tracker.on_state("l_chim", T0 + 15 * MIN, False)
+    tracker.on_tick(_Ctx(T0 + 59 * MIN, leavers=(("p1", "r1"),)))
+    tracker.on_tick(_Ctx(T0 + 61 * MIN, awake_rooms=("r1",)))  # occupancy is irrelevant to overrun
+    tracker.on_state("l_chim", T0 + 65 * MIN, False)
     (w,) = tracker.finish()
     assert (w.load_class, w.person_id, w.start_ts_utc, w.end_ts_utc) == (
-        "kitchen.chimney", None, T0 + 10 * MIN, T0 + 15 * MIN)
+        "water.geyser", None, T0 + 60 * MIN, T0 + 65 * MIN)
 
 
 def test_overrun_on_short_run_is_not_wasteful():

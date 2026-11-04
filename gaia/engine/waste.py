@@ -70,6 +70,7 @@ class WasteTracker:
         self._on: dict[str, int] = {}  # on loads -> ts of their on state (insertion ordered)
         self._last_attended: dict[str, int] = {}  # on loads -> last tick an awake member was in the room
         self._open: dict[str, tuple[str | None, int]] = {}  # load -> (person, start)
+        self._open_pairs: tuple[tuple[str, str], ...] | None = ()  # cache of open_pairs, None when stale
         self._off_at: dict[str, int] = {}  # open load -> ts of a pending off state
         self._last_leaver: dict[str, str] = {}  # room id -> person id
         self._intervals: list[GtWaste] = []
@@ -112,6 +113,13 @@ class WasteTracker:
                 if ctx.tick_ms >= due:
                     self._open_at(load_id, due, None)
 
+    def open_pairs(self) -> tuple[tuple[str, str], ...]:
+        """(load id, room id) of every open waste interval, in the order they opened. The tuple is
+        rebuilt only when the set of open intervals changes, so a tick costs no copy."""
+        if self._open_pairs is None:
+            self._open_pairs = tuple((lid, self._loads[lid].room_id) for lid in self._open)
+        return self._open_pairs
+
     def finish(self) -> list[GtWaste]:
         """Close the run: open intervals keep no end, unless an off state is pending. Short
         intervals are dropped."""
@@ -143,10 +151,12 @@ class WasteTracker:
 
     def _open_at(self, load_id: str, start_ms: int, person_id: str | None) -> None:
         self._open[load_id] = (person_id, start_ms)
+        self._open_pairs = None
 
     def _close(self, load_id: str, end_ms: int | None) -> None:
         if load_id not in self._open:
             return
         person, start = self._open.pop(load_id)
+        self._open_pairs = None
         load = self._loads[load_id]
         self._intervals.append(GtWaste(load_id, load.load_class, person, start, end_ms))

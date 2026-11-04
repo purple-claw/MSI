@@ -11,6 +11,7 @@ from datetime import date
 import numpy as np
 
 from gaia.devices.state import HomeDevices
+from gaia.engine.waste import WasteTracker
 from gaia.home.manifest import HomeManifest
 from gaia.household.personas import Member, Persona
 from gaia.world.calendar import DayType
@@ -18,6 +19,15 @@ from gaia.world.sun import outdoor_lux as _lux_of_altitude
 
 SLEEP_CODE = 0  # fill_grid is seeded with SLEEP -> 0
 MINUTES_PER_DAY = 1440
+
+
+@dataclass(frozen=True, slots=True)
+class ActivitySpan:
+    """One whole run of an activity for one person, planned for the entire run."""
+    person_id: str
+    start: int  # minute since the run start
+    end: int
+    room_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +72,30 @@ class OccupancyGrid:
         self._interned: list[dict[tuple, PersonNow]] = [{} for _ in members]
         self._last: tuple[PersonNow, ...] = ()
         self._last_minute = -2
+        self._spans: dict[str, tuple[ActivitySpan, ...]] = {}
         self.changed: list[bool] = self._changed_flags(rooms, acts)
+
+    def spans(self, activity: str) -> tuple[ActivitySpan, ...]:
+        """Every run of ``activity`` in the grid, for all members, ordered by start minute then
+        member order. Computed once per activity name."""
+        cached = self._spans.get(activity)
+        if cached is not None:
+            return cached
+        found: list[tuple[int, int, ActivitySpan]] = []
+        if activity in self._act_names:
+            code = self._act_names.index(activity)
+            for i, member in enumerate(self._members):
+                mask = np.asarray(self._acts[i]) == code
+                edges = np.diff(np.concatenate(([0], mask.astype(np.int8), [0])))
+                rooms = np.asarray(self._rooms[i])
+                for start, end in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)):
+                    room = int(rooms[start])
+                    found.append((int(start), i, ActivitySpan(
+                        member.person_id, int(start), int(end),
+                        self._room_ids[room] if room >= 0 else None)))
+        spans = tuple(span for _, _, span in sorted(found, key=lambda t: (t[0], t[1])))
+        self._spans[activity] = spans
+        return spans
 
     @staticmethod
     def _changed_flags(rooms: list[list[int]], acts: list[list[int]]) -> list[bool]:
@@ -114,6 +147,7 @@ class HomeEnv:
     grid: OccupancyGrid
     sun: list[float]  # solar elevation (deg) for every minute of the run
     calendar: tuple[tuple[date, DayType], ...]  # (local date, day type) per local day
+    waste: WasteTracker | None = None  # the run's waste tracker; None when nothing tracks waste
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +189,23 @@ class TickContext:
     @property
     def month(self) -> int:
         return self.local_date.month
+
+    def local_date_at(self, minute: int) -> date:
+        """Local date of any minute of the run, not only the current one."""
+        return self._env.calendar[minute // MINUTES_PER_DAY][0]
+
+    def activity_spans(self, activity: str) -> tuple[ActivitySpan, ...]:
+        """Every planned run of ``activity`` in the whole run (a lookahead the routine-driven
+        policies use, such as a geyser that heats before a bath)."""
+        return self._env.grid.spans(activity)
+
+    # --- waste --------------------------------------------------------------
+
+    def open_waste(self) -> tuple[tuple[str, str], ...]:
+        """(load id, room id) of the waste intervals open at the start of this minute."""
+        if self._env.waste is None:
+            return ()
+        return self._env.waste.open_pairs()
 
     # --- sun --------------------------------------------------------------
 

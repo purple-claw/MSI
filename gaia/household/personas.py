@@ -35,6 +35,10 @@ class Persona:
     tv_source_pref: float = 0.6  # chance the TV takes the set-top box as its source when the room has one
     volume_pref: float = 0.35  # volume set on the TV, streamer, speaker and receiver, within 0.2-0.5
     music_affinity: float = 0.4  # chance of starting music at a cook, dinner, relax or wind_down
+    # Utilities (assumption: defaults until calibrated from ETS).
+    notice_rate: float = 0.03  # chance per minute that the member switches off a wasted load outside their room
+    geyser_lead_min: float = 20.0  # minutes before a bath the geyser goes on: mean, drawn 15-30 per day
+    hot_water_always: bool = False  # geyser on before every bath, not only in cool weather
 
     def __post_init__(self) -> None:
         if not -500.0 <= self.cct_pref_offset_k <= 500.0:
@@ -55,6 +59,10 @@ class Persona:
             raise ValueError(f"volume_pref out of [0.2, 0.5]: {self.volume_pref!r}")
         if not 0.0 <= self.music_affinity <= 1.0:
             raise ValueError(f"music_affinity out of [0, 1]: {self.music_affinity!r}")
+        if not 0.0 <= self.notice_rate <= 1.0:
+            raise ValueError(f"notice_rate out of [0, 1]: {self.notice_rate!r}")
+        if not 15.0 <= self.geyser_lead_min <= 30.0:
+            raise ValueError(f"geyser_lead_min out of [15, 30]: {self.geyser_lead_min!r}")
 
 
 PERSONAS: dict[str, Persona] = {

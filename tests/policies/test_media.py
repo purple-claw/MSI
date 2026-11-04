@@ -80,7 +80,7 @@ def _label_for(run, event):
 
 def test_policy_is_registered_after_shading():
     names = [cls.name for cls in POLICY_ORDER]
-    assert names[-1] == "media"
+    assert names[-3:] == ["media", "utility", "notice"]
     assert names.index("shading") < names.index("media")
 
 

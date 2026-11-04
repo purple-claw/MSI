@@ -108,6 +108,7 @@ class _Run:
         self.members = household.members
         self.start_ms = start_ms
         self.devices = HomeDevices(manifest)
+        self.waste = WasteTracker(manifest)
         total = len(acts[0]) if acts else 0
         days = -(-total // MINUTES_PER_DAY)
         calendar = tuple(
@@ -121,6 +122,7 @@ class _Run:
                                rooms, acts, act_names, reuse_people),
             sun=sun_altitude_grid(city, start_ms, total),
             calendar=calendar,
+            waste=self.waste,
         )
         self.actuator = Actuator(
             home_id=spec.home_id, manifest=manifest, devices=self.devices,
@@ -130,7 +132,6 @@ class _Run:
         )
         self.policies = [cls() for cls in policy_order]
         self._policy_rngs = [rng_for(spec.home_seed, f"policy/{name}") for name in names]
-        self.waste = WasteTracker(manifest)
         self.gt_waste: list[GtWaste] = []
         self.context: list[ContextRow] = []
         self._last_ctx: TickContext | None = None

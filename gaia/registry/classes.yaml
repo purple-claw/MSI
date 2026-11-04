@@ -382,7 +382,7 @@ water.geyser:
   # 15 L storage geyser, 2000 W at 230-240 V (several Croma listings, Tier B).
   power_w: {"on": 2000}
   power_source: https://croma.com/orient-aquator-15-litres-5-star-storage-water-geyser-2000-watts-swas15vpgm2-wh-white-/p/246003
-  waste_rule: unattended
+  waste_rule: overrun:60
   rooms: [bathroom]
 
 water.pump:
@@ -413,7 +413,7 @@ kitchen.chimney:
     - {name: fan_speed, kind: count, lo: 1, hi: 3}
   power_w: {"on": 200}
   power_source: assumption
-  waste_rule: overrun:10
+  waste_rule: unattended:10
   rooms: [kitchen]
 
 kitchen.dishwasher:
