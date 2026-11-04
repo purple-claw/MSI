@@ -35,6 +35,9 @@ def _normalise(cap: Capability, value) -> tuple[Value, bool]:
     if not isinstance(value, Real) or not math.isfinite(value):
         raise ValueError(f"{cap.name!r} needs a finite number: {value!r}")
     number = float(value)
+    if cap.kind == "binary":
+        snapped = 1.0 if number >= 0.5 else 0.0
+        return snapped, number not in (0.0, 1.0)
     if cap.kind == "count":
         number = float(round(number))
     clamped = False

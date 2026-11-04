@@ -117,3 +117,12 @@ def test_set_get_roundtrip_within_range(value):
     state.set("cct", value)
 
     assert state.get("cct") == pytest.approx(value)
+
+
+def test_binary_snaps_to_zero_or_one():
+    state = DeviceState(get_load_class("light.dimmable"))
+
+    assert state.set("power", 0.5) == (1.0, 0.0, True)
+    assert state.set("power", 0.2) == (0.0, 1.0, True)
+    assert state.set("power", 1) == (1.0, 0.0, False)
+    assert state.set("power", 0) == (0.0, 1.0, False)
