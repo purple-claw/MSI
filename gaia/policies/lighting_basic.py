@@ -40,13 +40,14 @@ class LightingBasic:
         self._bind(ctx.manifest)
         self._pending = {}
         people = ctx.people
+        changed = ctx.changed  # no room or sleep change this minute: leave and sleep rules are idle
         intents: list[Intent] = []
         for i, person in enumerate(people):
-            # The guards repeat each rule's first test, so the common quiet minute skips the call.
-            if person.prev_room_id is not None and person.prev_room_id != person.room_id:
-                self._leave(ctx, people, i, rng, intents)
-            if person.asleep and not person.prev_asleep:
-                self._fall_asleep(ctx, people, i, rng, intents)
+            if changed:
+                if person.prev_room_id is not None and person.prev_room_id != person.room_id:
+                    self._leave(ctx, people, i, rng, intents)
+                if person.asleep and not person.prev_asleep:
+                    self._fall_asleep(ctx, people, i, rng, intents)
             if not person.asleep and person.room_id is not None:
                 self._presence(ctx, person, intents)
         return intents

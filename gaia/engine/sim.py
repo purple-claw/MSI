@@ -20,8 +20,8 @@ from gaia.engine.actuator import Actuator
 from gaia.engine.context import (
     SLEEP_CODE,
     DeviceView,
+    HomeEnv,
     OccupancyGrid,
-    SunClock,
     TickContext,
 )
 from gaia.engine.timeline import MINUTES_PER_DAY, SLEEP, fill_grid, stitch_days
@@ -36,6 +36,7 @@ from gaia.rng import rng_for
 from gaia.schema.events import Event, EventKind
 from gaia.world.calendar import day_type, local_midnight_utc_ms
 from gaia.world.cities import CITIES
+from gaia.world.sun import sun_altitude_grid
 
 MS_PER_MIN = 60_000
 CONTEXT_EVERY_MIN = 15
@@ -96,37 +97,41 @@ class _Run:
     def __init__(self, spec: HomeSpec, manifest: HomeManifest, household: Household,
                  start_ms: int, rooms: list[list[int]], acts: list[list[int]],
                  act_names: list[str], policy_order: Sequence[type[Policy]] = POLICY_ORDER) -> None:
+        names = [cls.name for cls in policy_order]
+        if len(set(names)) != len(names):
+            raise ValueError(f"policy names must be unique within a run: {names}")
+        city = CITIES[spec.city]
         self.spec = spec
         self.manifest = manifest
         self.household = household
         self.members = household.members
         self.start_ms = start_ms
-        city = CITIES[spec.city]
         self.devices = HomeDevices(manifest)
-        self._view = DeviceView(self.devices)
-        self.actuator = Actuator(
-            home_id=spec.home_id, manifest=manifest, devices=self.devices,
-            tz_offset_min=city.tz_offset_min,
-            rng_engine=rng_for(spec.home_seed, "engine"),
-            rng_interaction=rng_for(spec.home_seed, "interaction"),
-            rng_protocol=rng_for(spec.home_seed, "protocol"),
-            personas_by_id={m.person_id: m.persona for m in self.members},
-            next_id=self._next_id,
-        )
-        self.policies = [cls() for cls in policy_order]
-        self._policy_rngs = [rng_for(spec.home_seed, f"policy/{p.name}") for p in self.policies]
-        self.waste = WasteTracker(manifest)
-        self.gt_waste: list[GtWaste] = []
-        self.context: list[ContextRow] = []
-        self._counter = 0
-        self._grid = OccupancyGrid(self.members, [room.room_id for room in manifest.rooms],
-                                   rooms, acts, act_names)
-        self._sun = SunClock(city)
-        days = -(-len(acts[0]) // MINUTES_PER_DAY) if acts else 0
-        self._calendar = tuple(
+        total = len(acts[0]) if acts else 0
+        days = -(-total // MINUTES_PER_DAY)
+        calendar = tuple(
             (d, day_type(d, spec.festivals))
             for d in (spec.start_date + timedelta(days=k) for k in range(days))
         )
+        self.home_env = HomeEnv(
+            manifest=manifest,
+            devices=DeviceView(self.devices),
+            grid=OccupancyGrid(self.members, [room.room_id for room in manifest.rooms],
+                               rooms, acts, act_names),
+            sun=sun_altitude_grid(city, start_ms, total),
+            calendar=calendar,
+        )
+        self.actuator = Actuator(
+            home_id=spec.home_id, manifest=manifest, devices=self.devices,
+            tz_offset_min=city.tz_offset_min, home_seed=spec.home_seed,
+            personas_by_id={m.person_id: m.persona for m in self.members},
+            on_state=self._on_state,
+        )
+        self.policies = [cls() for cls in policy_order]
+        self._policy_rngs = [rng_for(spec.home_seed, f"policy/{name}") for name in names]
+        self.waste = WasteTracker(manifest)
+        self.gt_waste: list[GtWaste] = []
+        self.context: list[ContextRow] = []
         self._last_ctx: TickContext | None = None
 
     @property
@@ -143,16 +148,14 @@ class _Run:
 
     def step(self, m: int) -> None:
         """Simulate minute ``m``: the context row, then each policy's intents, then waste."""
-        ctx = self._context(m)
+        ctx = TickContext(minute=m, tick_ms=self.start_ms + m * MS_PER_MIN, _env=self.home_env)
         if m % CONTEXT_EVERY_MIN == 0:
             self.context.append(ContextRow(ctx.tick_ms, self.spec.home_id, ctx.outdoor_lux,
                                            ctx.sun_altitude_deg))
         for policy, rng in zip(self.policies, self._policy_rngs):
-            before = len(self.actuator.events)
-            self.actuator.apply(policy.tick(ctx, rng), ctx.tick_ms)
-            for ev in self.actuator.events[before:]:
-                if ev.kind == EventKind.state:
-                    self.waste.on_state(ev.load_id, ev.ts_utc, self.devices.is_on(ev.load_id))
+            intents = policy.tick(ctx, rng)
+            if intents:
+                self.actuator.apply(intents, ctx.tick_ms)
         self.waste.on_tick(ctx)
         self._last_ctx = ctx
 
@@ -171,16 +174,11 @@ class _Run:
 
     # --- helpers --------------------------------------------------------------
 
-    def _context(self, m: int) -> TickContext:
-        return TickContext(
-            minute=m, tick_ms=self.start_ms + m * MS_PER_MIN, manifest=self.manifest,
-            devices=self._view, _grid=self._grid, _sun=self._sun, _calendar=self._calendar,
-        )
-
-    def _next_id(self) -> str:
-        eid = f"{self.spec.home_id}:{self._counter:09d}"
-        self._counter += 1
-        return eid
+    def _on_state(self, load_id: str, capability: str, ts_ms: int) -> None:
+        """Only the capability that says on or off moves the waste tracker."""
+        state = self.devices.get(load_id)
+        if capability == state.on_off_capability():
+            self.waste.on_state(load_id, ts_ms, state.is_on())
 
 
 def _build_grids(spec: HomeSpec) -> tuple[HomeManifest, Household, list[list[int]], list[list[int]], list[str]]:

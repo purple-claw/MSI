@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import date
 
+from gaia.engine.context import TickContext
 from gaia.engine.sim import HomeSpec, _Run
 from gaia.home.archetypes import APARTMENTS, ARCHETYPES
 from gaia.household.personas import Household, make_household
@@ -91,7 +92,7 @@ def test_last_to_sleep_cleanup_switches_off_an_unoccupied_lit_room():
     rows = _rows(("living", AWAKE, 30), ("bed", SLEEP, 10))
     run, a, manifest = _setup(1.0, 40, rows)
     run.run(30)  # minutes 0..29 played for real; the light in living is on at the end
-    ctx = run._context(30)
+    ctx = TickContext(minute=30, tick_ms=run.start_ms + 30 * 60_000, _env=run.home_env)
     living = manifest.main_light("h1:living").load_id
     assert run.devices.is_on(living)
 
@@ -100,3 +101,15 @@ def test_last_to_sleep_cleanup_switches_off_an_unoccupied_lit_room():
         living, 0.0, "cleanup", "last_to_sleep", "turn_off")
     assert off.person_id == a.person_id and off.activity == "sleep"
     assert LightingBasic().tick(ctx, FixedRng(0.99)) == []  # draw >= 0.5: light stays on
+
+
+def test_entry_into_a_dark_room_is_labelled_room_entry():
+    # A is awake in the living room (light on, darkness), then walks into the dark bedroom.
+    run, a, manifest = _setup(0.0, 20, _rows(("living", AWAKE, 10), ("bed", AWAKE, 10)))
+    run.run(20)
+    run.finish()
+    bed_on = [lb for lb in run.labels
+              if lb.room_id == "h1:bedroom_1" and lb.device_action == "turn_on"]
+    assert len(bed_on) == 1
+    assert (bed_on[0].trigger, bed_on[0].intent, bed_on[0].person_id) == (
+        "room_entry", "illumination", a.person_id)

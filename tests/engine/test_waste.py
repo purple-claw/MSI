@@ -16,8 +16,8 @@ class _Ctx:
     awake_rooms: tuple = ()
     leavers: tuple = ()  # (person_id, room_id)
 
-    def awake_in(self, room_id):
-        return (object(),) if room_id in self.awake_rooms else ()
+    def any_awake_in(self, room_id):
+        return room_id in self.awake_rooms
 
     def left(self):
         return [(SimpleNamespace(person_id=p), r) for p, r in self.leavers]
@@ -79,14 +79,15 @@ def test_awake_occupied_room_never_opens():
     assert tracker.finish() == []
 
 
-def test_overrun_opens_after_n_minutes_on():
+def test_overrun_opens_after_n_minutes_on_with_no_person():
     tracker = WasteTracker(_manifest())
     tracker.on_state("l_fan", T0, True)
-    tracker.on_tick(_Ctx(T0 + 14 * MIN))
+    tracker.on_tick(_Ctx(T0 + 14 * MIN, leavers=(("p1", "r1"),)))
     tracker.on_tick(_Ctx(T0 + 16 * MIN, awake_rooms=("r1",)))  # occupancy is irrelevant to overrun
     tracker.on_state("l_fan", T0 + 20 * MIN, False)
     (w,) = tracker.finish()
-    assert (w.load_class, w.start_ts_utc, w.end_ts_utc) == ("fan.exhaust", T0 + 15 * MIN, T0 + 20 * MIN)
+    assert (w.load_class, w.person_id, w.start_ts_utc, w.end_ts_utc) == (
+        "fan.exhaust", None, T0 + 15 * MIN, T0 + 20 * MIN)
 
 
 def test_overrun_on_short_run_is_not_wasteful():

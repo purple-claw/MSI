@@ -1,8 +1,13 @@
 """Actuator: applies intents to device state and emits command, state and sensor events.
 
 Each applied command yields a command event, a state event referencing it, and one Label.
-Timestamps follow the G1 engine: command = tick + engine-rng jitter, state = command +
-protocol latency, and both are serialised per load so a load never goes back in time.
+Timestamps follow the G1 engine: command = tick + jitter, state = command + protocol latency,
+and both are serialised per load so a load never goes back in time.
+
+Randomness is keyed by the emitting policy: each policy name gets its own jitter ("engine"),
+source ("interaction") and latency ("protocol") streams, derived from the home seed. So adding
+a policy that emits intents on other loads leaves every other policy's events unchanged.
+Event ids are "<home>:<policy>:<counter>", counted per policy, for the same reason.
 """
 
 from collections.abc import Callable, Mapping
@@ -16,6 +21,7 @@ from gaia.home.manifest import HomeManifest, Load
 from gaia.household.personas import Persona
 from gaia.interaction.choose import choose_source
 from gaia.labels.model import SCHEMA_VERSION, Label, validate_label
+from gaia.rng import rng_for
 from gaia.schema.events import Domain, Event, EventKind, Source
 
 MS_PER_MIN = 60_000
@@ -23,6 +29,9 @@ SYSTEM_ACTOR = "system"
 SENSOR_INTENT = "system"
 SENSOR_TRIGGER = "presence_tick"
 SENSOR_SOURCE_REF = "emit_sensor"
+
+# Called as (load_id, capability, state_ts_ms) whenever a state event is emitted.
+StateCallback = Callable[[str, str, int], None]
 
 
 @dataclass(frozen=True)
@@ -35,8 +44,15 @@ class Intent:
     intent: str
     trigger: str
     device_action: str
-    policy: str  # source_ref of the emitted labels
+    policy: str  # the emitting policy; also the source_ref of its labels
     source: Source | None = None  # None: draw from the person's persona, or system without one
+
+
+@dataclass(frozen=True)
+class ActuatorStreams:
+    engine: np.random.Generator
+    interaction: np.random.Generator
+    protocol: np.random.Generator
 
 
 class Actuator:
@@ -46,22 +62,20 @@ class Actuator:
         manifest: HomeManifest,
         devices: HomeDevices,
         tz_offset_min: int,
-        rng_engine: np.random.Generator,
-        rng_interaction: np.random.Generator,
-        rng_protocol: np.random.Generator,
+        home_seed: int,
         personas_by_id: Mapping[str, Persona],
-        next_id: Callable[[], str],
+        on_state: StateCallback | None = None,
     ) -> None:
         self._home_id = home_id
         self._loads = {ld.load_id: ld for ld in manifest.loads}
         self._rooms = {room.room_id: room for room in manifest.rooms}
         self._devices = devices
         self._tz_offset_min = tz_offset_min
-        self._rng_engine = rng_engine
-        self._rng_interaction = rng_interaction
-        self._rng_protocol = rng_protocol
+        self._home_seed = home_seed
         self._personas = personas_by_id
-        self._next_id = next_id
+        self._on_state = on_state
+        self._streams: dict[str, ActuatorStreams] = {}
+        self._counters: dict[str, int] = {}
         self._last_ts: dict[str, int] = {}
         self._events: list[Event] = []
         self._labels: list[Label] = []
@@ -74,6 +88,18 @@ class Actuator:
     def labels(self) -> list[Label]:
         return self._labels
 
+    def streams_for(self, policy: str) -> ActuatorStreams:
+        """The policy's own jitter, source and latency streams (created on first use)."""
+        streams = self._streams.get(policy)
+        if streams is None:
+            streams = ActuatorStreams(
+                engine=rng_for(self._home_seed, f"actuator/{policy}/engine"),
+                interaction=rng_for(self._home_seed, f"actuator/{policy}/interaction"),
+                protocol=rng_for(self._home_seed, f"actuator/{policy}/protocol"),
+            )
+            self._streams[policy] = streams
+        return streams
+
     def apply(self, intents: list[Intent], tick_start_ms: int) -> None:
         """Apply one tick's intents in order.
 
@@ -81,7 +107,7 @@ class Actuator:
         intent for the same pair is dropped unseen, so a policy must not propose a no-op ahead
         of the change it means. A redundant intent (the device already holds the value) emits
         nothing and draws from no stream. An intent whose ``source`` is None draws one source
-        from the interaction stream, or none for a system intent.
+        from its policy's interaction stream, or none for a system intent.
 
         Unknown person ids raise ValueError before any intent of the tick is applied.
         """
@@ -104,8 +130,8 @@ class Actuator:
         prev = state.get(capability)
         new, clamped = state.normalise(capability, value)
         state.set(capability, new)
-        ts = self._serial_ts(load_id, tick_ms + self._jitter())
-        event_id = self._next_id()
+        ts = self._serial_ts(load_id, tick_ms + self._jitter(SENSOR_SOURCE_REF))
+        event_id = self._next_id(SENSOR_SOURCE_REF)
         self._events.append(self._event(
             EventKind.sensor, load, ts, capability, new, prev, Source.system, SYSTEM_ACTOR, None, event_id,
         ))
@@ -120,7 +146,7 @@ class Actuator:
         state = self._devices.get(intent.load_id)
         if not state.would_change(intent.capability, intent.value):
             return  # a redundant intent must not switch an off device on
-        source = intent.source if intent.source is not None else self._draw_source(intent.person_id)
+        source = intent.source if intent.source is not None else self._draw_source(intent)
         if state.requires_power(intent.capability) and not state.is_on():
             power_on = replace(intent, capability="power", value=1.0, device_action="turn_on")
             self._command(power_on, source, load, tick)
@@ -130,21 +156,24 @@ class Actuator:
         result = self._devices.get(load.load_id).set(intent.capability, intent.value)
         if result is None:
             return
+        streams = self.streams_for(intent.policy)
         new, prev, clamped = result
-        cmd_ts = self._serial_ts(load.load_id, tick + self._jitter())
-        cmd_id = self._next_id()
+        cmd_ts = self._serial_ts(load.load_id, tick + self._jitter(intent.policy))
+        cmd_id = self._next_id(intent.policy)
         actor = intent.person_id if intent.person_id is not None else SYSTEM_ACTOR
         self._events.append(self._event(
             EventKind.command, load, cmd_ts, intent.capability, new, prev, source, actor, None, cmd_id,
         ))
-        state_ts = self._serial_ts(load.load_id, cmd_ts + latency_ms(load.protocol, self._rng_protocol))
+        state_ts = self._serial_ts(load.load_id, cmd_ts + latency_ms(load.protocol, streams.protocol))
         self._events.append(self._event(
             EventKind.state, load, state_ts, intent.capability, new, prev, source, actor, cmd_id,
-            self._next_id(),
+            self._next_id(intent.policy),
         ))
         self._last_ts[load.load_id] = state_ts
         self._record(cmd_id, intent.person_id, load, intent.activity, intent.intent, intent.trigger,
                      intent.device_action, intent.policy, clamped)
+        if self._on_state is not None:
+            self._on_state(load.load_id, intent.capability, state_ts)
 
     def _record(self, event_id: str, person_id: str | None, load: Load, activity: str, intent: str,
                 trigger: str, device_action: str, source_ref: str, clamped: bool) -> None:
@@ -167,16 +196,22 @@ class Actuator:
             domain=Domain.synthetic,
         )
 
+    def _next_id(self, policy: str) -> str:
+        n = self._counters.get(policy, 0)
+        self._counters[policy] = n + 1
+        return f"{self._home_id}:{policy}:{n:09d}"
+
     def _serial_ts(self, load_id: str, ts: int) -> int:
         return max(ts, self._last_ts.get(load_id, -1) + 1)
 
-    def _jitter(self) -> int:
-        return int(self._rng_engine.integers(0, MS_PER_MIN))
+    def _jitter(self, policy: str) -> int:
+        return int(self.streams_for(policy).engine.integers(0, MS_PER_MIN))
 
-    def _draw_source(self, person_id: str | None) -> Source:
-        if person_id is None:
+    def _draw_source(self, intent: Intent) -> Source:
+        if intent.person_id is None:
             return Source.system
-        return choose_source(self._personas[person_id], self._rng_interaction)
+        return choose_source(self._personas[intent.person_id],
+                             self.streams_for(intent.policy).interaction)
 
     def _load(self, load_id: str) -> Load:
         try:

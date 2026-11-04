@@ -104,8 +104,16 @@ class DeviceState:
         capability = self._capability(cap)
         return self._has_power() and cap != "power" and capability.kind != "event"
 
-    def is_on(self) -> bool:
+    def on_off_capability(self) -> str | None:
+        """The capability whose state says whether the load is on: power, else position, else None."""
         if self._has_power():
+            return "power"
+        if "position" in self._caps:
+            return "position"
+        return None
+
+    def is_on(self) -> bool:
+        if "power" in self._caps:
             return self._values["power"] == 1
         if "position" in self._caps:
             return self._values["position"] > 0

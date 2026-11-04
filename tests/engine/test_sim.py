@@ -1,8 +1,11 @@
 from dataclasses import replace
 from datetime import date
 
+import pytest
+
 from gaia.engine.sim import HomeSpec, _Run, simulate_home
-from gaia.policies import POLICY_ORDER
+from gaia.engine.actuator import Intent
+from gaia.policies import POLICY_ORDER, LightingBasic
 from gaia.home.archetypes import APARTMENTS, ARCHETYPES
 from gaia.household.personas import Household, make_household
 from gaia.rng import rng_for
@@ -146,20 +149,36 @@ def test_presence_runs_tile_the_range_per_person():
         assert all(p.end_ts_utc > p.start_ts_utc for p in runs)
 
 
-class _Probe:
-    """A policy that only draws from its own stream and never intervenes."""
+class _FanProbe:
+    """Emits on/off intents on a fan that no other policy touches."""
 
-    name = "probe"
+    name = "fan_probe"
 
     def tick(self, ctx, rng):
-        rng.random()
-        return []
+        if ctx.minute % 37:
+            return []
+        fan = next(ld.load_id for ld in ctx.manifest.loads if ld.load_class == "fan.ceiling")
+        on = not ctx.devices.is_on(fan)
+        return [Intent(load_id=fan, capability="power", value=1.0 if on else 0.0,
+                       person_id=ctx.people[0].person_id, activity="living",
+                       intent="thermal_comfort", trigger="activity_start",
+                       device_action="turn_on" if on else "turn_off", policy=self.name)]
 
 
 def test_policy_stream_isolation():
     spec = HomeSpec(home_id="h1", home_seed=17, city="hyderabad", archetype="apartment_3bhk",
                     start_date=date(2026, 11, 2), days=3, festivals=frozenset())
     base = simulate_home(spec)
-    probed = simulate_home(spec, policy_order=[*POLICY_ORDER, _Probe])
-    assert base.events and probed.events == base.events
-    assert probed.labels == base.labels and probed.gt_waste == base.gt_waste
+    probed = simulate_home(spec, policy_order=[*POLICY_ORDER, _FanProbe])
+    lights = {ld.load_id for ld in base.manifest.loads if ld.is_main_light}
+    assert any(e.load_id not in lights for e in probed.events)  # the probe really emitted
+    assert [e for e in probed.events if e.load_id in lights] == [e for e in base.events if e.load_id in lights]
+    assert [lb for lb in probed.labels if lb.source_ref == "lighting_basic"] == base.labels
+    assert [w for w in probed.gt_waste if w.load_id in lights] == base.gt_waste
+
+
+def test_policy_names_must_be_unique():
+    spec = HomeSpec(home_id="h1", home_seed=3, city="hyderabad", archetype="apartment_2bhk",
+                    start_date=date(2026, 11, 2), days=1, festivals=frozenset())
+    with pytest.raises(ValueError, match="unique"):
+        simulate_home(spec, policy_order=[LightingBasic, LightingBasic])

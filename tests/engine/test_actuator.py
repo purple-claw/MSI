@@ -1,7 +1,7 @@
 import pytest
 
 from gaia.devices.state import HomeDevices
-from gaia.engine.actuator import Actuator, Intent
+from gaia.engine.actuator import SENSOR_SOURCE_REF, Actuator, Intent
 from gaia.home.manifest import HomeManifest, Load, Room
 from gaia.household.personas import PERSONAS
 from gaia.interaction.choose import choose_source
@@ -10,7 +10,8 @@ from gaia.schema.events import EventKind, Protocol, Source
 
 HOME_SEED = 11
 TICK = 1_700_000_000_000
-PERSONS_P1 = PERSONAS["working_professional"]
+POLICY = "dim_for_tv"
+PERSON = PERSONAS["working_professional"]
 
 
 def _manifest() -> HomeManifest:
@@ -26,32 +27,11 @@ def _manifest() -> HomeManifest:
     )
 
 
-class _Ids:
-    def __init__(self) -> None:
-        self.n = 0
-
-    def __call__(self) -> str:
-        self.n += 1
-        return f"h1:{self.n:09d}"
-
-
-def _streams() -> dict:
-    return {
-        "engine": rng_for(HOME_SEED, "engine"),
-        "interaction": rng_for(HOME_SEED, "interaction"),
-        "protocol": rng_for(HOME_SEED, "protocol"),
-    }
-
-
-def _actuator(ids=None, streams=None) -> Actuator:
+def _actuator(on_state=None) -> Actuator:
     manifest = _manifest()
-    streams = streams or _streams()
     return Actuator(
         home_id="h1", manifest=manifest, devices=HomeDevices(manifest), tz_offset_min=330,
-        rng_engine=streams["engine"], rng_interaction=streams["interaction"],
-        rng_protocol=streams["protocol"],
-        personas_by_id={"p1": PERSONAS["working_professional"]},
-        next_id=ids or _Ids(),
+        home_seed=HOME_SEED, personas_by_id={"p1": PERSON}, on_state=on_state,
     )
 
 
@@ -59,7 +39,7 @@ def _intent(load_id="l_tun", capability="level", value=0.5, **overrides) -> Inte
     fields = dict(
         load_id=load_id, capability=capability, value=value, person_id="p1",
         activity="living", intent="ambience", trigger="activity_start",
-        device_action="set_level", policy="dim_for_tv", source=Source.wall,
+        device_action="set_level", policy=POLICY, source=Source.wall,
     )
     fields.update(overrides)
     return Intent(**fields)
@@ -67,6 +47,12 @@ def _intent(load_id="l_tun", capability="level", value=0.5, **overrides) -> Inte
 
 def _commands(act: Actuator):
     return [e for e in act.events if e.kind == EventKind.command]
+
+
+def _states(act: Actuator, policy: str):
+    s = act.streams_for(policy)
+    return (s.engine.bit_generator.state, s.interaction.bit_generator.state,
+            s.protocol.bit_generator.state)
 
 
 def test_dedupe_first_wins():
@@ -99,7 +85,7 @@ def test_implicit_power_on():
     assert cct_label.device_action == "set_cct"
     assert power_label.intent == cct_label.intent == "ambience"
     assert power_label.person_id == cct_label.person_id == "p1"
-    assert power_label.source_ref == cct_label.source_ref == "dim_for_tv"
+    assert power_label.source_ref == cct_label.source_ref == POLICY
 
 
 def test_no_implicit_power_on_for_position_device():
@@ -179,35 +165,28 @@ def test_sensor_value_is_clamped():
     assert act.labels[0].clamped is True
 
 
-def _states(streams):
-    return {name: rng.bit_generator.state for name, rng in streams.items()}
-
-
 def test_redundant_intent_draws_nothing_from_any_stream():
-    streams = _streams()
-    act = _actuator(streams=streams)
-    before = _states(streams)
+    act = _actuator()
+    before = _states(act, POLICY)
     act.apply([_intent(value=0.0), _intent(capability="power", value=0.0, device_action="turn_off")], TICK)
-    assert _states(streams) == before
+    assert _states(act, POLICY) == before
 
 
 def test_explicit_source_skips_the_interaction_draw():
-    streams = _streams()
-    act = _actuator(streams=streams)
-    before = streams["interaction"].bit_generator.state
+    act = _actuator()
+    before = act.streams_for(POLICY).interaction.bit_generator.state
     act.apply([_intent(source=Source.app)], TICK)
-    assert streams["interaction"].bit_generator.state == before
+    assert act.streams_for(POLICY).interaction.bit_generator.state == before
     assert _commands(act)[0].source == Source.app
 
 
 def test_implicit_power_on_makes_exactly_one_source_draw():
-    streams = _streams()
-    act = _actuator(streams=streams)
-    reference = rng_for(HOME_SEED, "interaction")
-    choose_source(PERSONS_P1, reference)
+    act = _actuator()
+    reference = rng_for(HOME_SEED, f"actuator/{POLICY}/interaction")
+    choose_source(PERSON, reference)
     act.apply([_intent(capability="cct", value=3000.0, device_action="set_cct", source=None)], TICK)
     assert [c.capability for c in _commands(act)] == ["power", "cct"]
-    assert streams["interaction"].bit_generator.state == reference.bit_generator.state
+    assert act.streams_for(POLICY).interaction.bit_generator.state == reference.bit_generator.state
 
 
 def test_same_seed_gives_identical_events_and_labels():
@@ -219,6 +198,31 @@ def test_same_seed_gives_identical_events_and_labels():
         return act.events, act.labels
 
     assert run() == run()
+
+
+def test_each_policy_draws_from_its_own_streams():
+    act = _actuator()
+    other = _states(act, "other_policy")
+    act.apply([_intent(source=None)], TICK)
+    assert _states(act, "other_policy") == other
+
+
+def test_event_ids_count_per_policy():
+    act = _actuator()
+    act.apply([_intent(value=0.4)], TICK)
+    act.apply([_intent(load_id="l_curtain", capability="position", value=0.2,
+                       device_action="set_position", policy="shade_policy")], TICK)
+    ids = [e.event_id for e in act.events]
+    assert ids[0] == "h1:dim_for_tv:000000000" and ids[1] == "h1:dim_for_tv:000000001"
+    assert "h1:shade_policy:000000000" in ids
+
+
+def test_on_state_callback_fires_for_each_state_event_only():
+    seen = []
+    act = _actuator(on_state=lambda load, cap, ts: seen.append((load, cap)))
+    act.apply([_intent(capability="cct", value=3000.0, device_action="set_cct")], TICK)
+    act.emit_sensor("s_temp", "temperature", 24.0, TICK)
+    assert seen == [("l_tun", "power"), ("l_tun", "cct")]
 
 
 def test_unknown_person_id_raises_before_any_change():

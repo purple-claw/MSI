@@ -4,7 +4,8 @@ The rule comes from the load-class registry:
 - ``unattended``: on while no awake member is in its room. It opens at the first such minute
   and closes at an awake entry or at the off state.
 - ``overrun:N``: on for more than N minutes. It opens N minutes after the on state and closes
-  at the off state. Occupancy does not matter.
+  at the off state. Occupancy does not matter, and nobody is recorded as having left it, so
+  its person is None.
 - ``none``: never wasteful.
 
 Every interval has a start, and an end unless the run ends while it is open. Intervals
@@ -64,19 +65,21 @@ class WasteTracker:
         """Advance the rules for one minute. ``ctx`` is a TickContext (or a duck-typed stand-in)."""
         for person, room_id in ctx.left():
             self._last_leaver[room_id] = person.person_id
-        for load_id, on_ts in list(self._on.items()):
+        if not self._on:
+            return
+        for load_id, on_ts in self._on.items():  # _on is not changed inside this loop
             load = self._loads[load_id]
             kind, minutes = self._rules[load_id]
             if kind == "unattended":
                 if load_id in self._open:
-                    if ctx.awake_in(load.room_id):
+                    if ctx.any_awake_in(load.room_id):
                         self._close(load_id, ctx.tick_ms)
-                elif not ctx.awake_in(load.room_id):
-                    self._open_at(load_id, ctx.tick_ms, load.room_id)
+                elif not ctx.any_awake_in(load.room_id):
+                    self._open_at(load_id, ctx.tick_ms, self._last_leaver.get(load.room_id))
             elif kind == "overrun" and load_id not in self._open:
                 due = on_ts + minutes * MS_PER_MIN
                 if ctx.tick_ms >= due:
-                    self._open_at(load_id, due, load.room_id)
+                    self._open_at(load_id, due, None)
 
     def finish(self) -> list[GtWaste]:
         """Close the run: open intervals keep no end. Short intervals are dropped."""
@@ -88,8 +91,8 @@ class WasteTracker:
 
     # --- internals ----------------------------------------------------------
 
-    def _open_at(self, load_id: str, start_ms: int, room_id: str) -> None:
-        self._open[load_id] = (self._last_leaver.get(room_id), start_ms)
+    def _open_at(self, load_id: str, start_ms: int, person_id: str | None) -> None:
+        self._open[load_id] = (person_id, start_ms)
 
     def _close(self, load_id: str, end_ms: int | None) -> None:
         if load_id not in self._open:

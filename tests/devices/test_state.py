@@ -126,3 +126,9 @@ def test_binary_snaps_to_zero_or_one():
     assert state.set("power", 0.2) == (0.0, 1.0, True)
     assert state.set("power", 1) == (1.0, 0.0, False)
     assert state.set("power", 0) == (0.0, 1.0, False)
+
+
+def test_on_off_capability_by_class():
+    assert DeviceState(get_load_class("light.onoff")).on_off_capability() == "power"
+    assert DeviceState(get_load_class("shade.curtain")).on_off_capability() == "position"
+    assert DeviceState(get_load_class("sensor.temperature")).on_off_capability() is None

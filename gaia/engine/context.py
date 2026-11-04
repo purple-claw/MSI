@@ -1,20 +1,20 @@
 """What a policy sees each minute: time, sun, people, home devices and occupancy helpers.
 
-``TickContext`` is cheap to build. Per-minute room and activity grids are precomputed by the
-engine, the sun is evaluated only when a policy asks for it, and ``people`` is built once per
-tick on first access and interned, so a quiet minute allocates almost nothing.
+The engine builds one ``HomeEnv`` per home (grids, the sun for every minute, the calendar and
+a per-minute ``changed`` flag) and one cheap ``TickContext`` per minute. ``people`` is built on
+first access, and reused from the previous minute when no room or sleep state changed.
 """
 
 from dataclasses import dataclass, field
 from datetime import date
 
+import numpy as np
+
 from gaia.devices.state import HomeDevices
 from gaia.home.manifest import HomeManifest
 from gaia.household.personas import Member, Persona
-from gaia.world.cities import City
 from gaia.world.calendar import DayType
 from gaia.world.sun import outdoor_lux as _lux_of_altitude
-from gaia.world.sun import sun_altitude_deg as _altitude_of
 
 SLEEP_CODE = 0  # fill_grid is seeded with SLEEP -> 0
 MINUTES_PER_DAY = 1440
@@ -44,23 +44,9 @@ class DeviceView:
         return self._devices.get(load_id).get(capability)
 
 
-class SunClock:
-    """Solar altitude at one city, memoised for the most recent tick."""
-
-    def __init__(self, city: City) -> None:
-        self._city = city
-        self._tick: int | None = None
-        self._altitude = 0.0
-
-    def altitude(self, tick_ms: int) -> float:
-        if tick_ms != self._tick:
-            self._tick = tick_ms
-            self._altitude = _altitude_of(self._city, tick_ms)
-        return self._altitude
-
-
 class OccupancyGrid:
-    """Per-member minute grids (room index, activity code) and the interned PersonNow objects."""
+    """Per-member minute grids (room index, activity code), interned PersonNow objects and the
+    ``changed`` flags: minute m changes someone's room or sleep state relative to m-1."""
 
     def __init__(self, members: tuple[Member, ...], room_ids: list[str], rooms: list[list[int]],
                  acts: list[list[int]], act_names: list[str]) -> None:
@@ -70,8 +56,25 @@ class OccupancyGrid:
         self._acts = acts
         self._act_names = act_names
         self._interned: list[dict[tuple, PersonNow]] = [{} for _ in members]
+        self._last: tuple[PersonNow, ...] = ()
+        self._last_minute = -2
+        self.changed: list[bool] = self._changed_flags(rooms, acts)
+
+    @staticmethod
+    def _changed_flags(rooms: list[list[int]], acts: list[list[int]]) -> list[bool]:
+        if not rooms:
+            return []
+        flags = np.zeros(len(rooms[0]), dtype=bool)
+        for room_row, act_row in zip(rooms, acts):
+            room = np.asarray(room_row)
+            asleep = np.asarray(act_row) == SLEEP_CODE
+            flags[1:] |= (room[1:] != room[:-1]) | (asleep[1:] != asleep[:-1])
+        return flags.tolist()
 
     def snapshot(self, m: int) -> tuple[PersonNow, ...]:
+        if m and self._last_minute == m - 1 and not self.changed[m]:
+            self._last_minute = m
+            return self._last
         out = []
         for i, member in enumerate(self._members):
             r, a = self._rooms[i][m], self._acts[i][m]
@@ -90,19 +93,43 @@ class OccupancyGrid:
                 )
                 self._interned[i][key] = person
             out.append(person)
-        return tuple(out)
+        self._last = tuple(out)
+        self._last_minute = m
+        return self._last
+
+
+@dataclass(frozen=True, slots=True)
+class HomeEnv:
+    """Per-home data shared by every tick."""
+
+    manifest: HomeManifest
+    devices: DeviceView
+    grid: OccupancyGrid
+    sun: list[float]  # solar elevation (deg) for every minute of the run
+    calendar: tuple[tuple[date, DayType], ...]  # (local date, day type) per local day
 
 
 @dataclass(frozen=True, slots=True)
 class TickContext:
     minute: int  # minutes since local midnight of the start date
     tick_ms: int
-    manifest: HomeManifest
-    devices: DeviceView
-    _grid: OccupancyGrid = field(repr=False, compare=False)
-    _sun: SunClock = field(repr=False, compare=False)
-    _calendar: tuple[tuple[date, DayType], ...] = field(repr=False, compare=False)
+    _env: HomeEnv = field(repr=False, compare=False)
     _people: tuple[PersonNow, ...] | None = field(default=None, repr=False, compare=False)
+
+    # --- home -------------------------------------------------------------
+
+    @property
+    def manifest(self) -> HomeManifest:
+        return self._env.manifest
+
+    @property
+    def devices(self) -> DeviceView:
+        return self._env.devices
+
+    @property
+    def changed(self) -> bool:
+        """True when some member's room or sleep state differs from the previous minute."""
+        return self._env.grid.changed[self.minute]
 
     # --- time -------------------------------------------------------------
 
@@ -112,11 +139,11 @@ class TickContext:
 
     @property
     def local_date(self) -> date:
-        return self._calendar[self.minute // MINUTES_PER_DAY][0]
+        return self._env.calendar[self.minute // MINUTES_PER_DAY][0]
 
     @property
     def day_type(self) -> DayType:
-        return self._calendar[self.minute // MINUTES_PER_DAY][1]
+        return self._env.calendar[self.minute // MINUTES_PER_DAY][1]
 
     @property
     def month(self) -> int:
@@ -126,33 +153,44 @@ class TickContext:
 
     @property
     def sun_altitude_deg(self) -> float:
-        return self._sun.altitude(self.tick_ms)
+        return self._env.sun[self.minute]
 
     @property
     def outdoor_lux(self) -> float:
-        return _lux_of_altitude(self.sun_altitude_deg)
+        return _lux_of_altitude(self._env.sun[self.minute])
 
     # --- people -----------------------------------------------------------
 
     @property
     def people(self) -> tuple[PersonNow, ...]:
         if self._people is None:
-            object.__setattr__(self, "_people", self._grid.snapshot(self.minute))
+            object.__setattr__(self, "_people", self._env.grid.snapshot(self.minute))
         return self._people
 
     def awake_in(self, room_id: str) -> tuple[PersonNow, ...]:
         return tuple(p for p in self.people if p.room_id == room_id and not p.asleep)
 
+    def any_awake_in(self, room_id: str) -> bool:
+        return any(p.room_id == room_id and not p.asleep for p in self.people)
+
     def entered(self) -> list[tuple[PersonNow, str]]:
+        if not self.changed:
+            return []
         return [(p, p.room_id) for p in self.people
                 if p.room_id is not None and p.room_id != p.prev_room_id]
 
     def left(self) -> list[tuple[PersonNow, str]]:
+        if not self.changed:
+            return []
         return [(p, p.prev_room_id) for p in self.people
                 if p.prev_room_id is not None and p.prev_room_id != p.room_id]
 
     def fell_asleep(self) -> list[PersonNow]:
+        if not self.changed:
+            return []
         return [p for p in self.people if p.asleep and not p.prev_asleep]
 
     def woke(self) -> list[PersonNow]:
+        if not self.changed:
+            return []
         return [p for p in self.people if not p.asleep and p.prev_asleep]
