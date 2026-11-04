@@ -2,7 +2,9 @@ import dataclasses
 
 import pytest
 
-from gaia.registry.registry import FIXTURES, REGISTRY, Capability, LoadClass, get_load_class
+from gaia.registry.registry import (
+    FIXTURES, REGISTRY, Capability, LoadClass, get_load_class, load_registry,
+)
 from gaia.schema.events import Protocol
 
 EXPECTED_CLASSES = {
@@ -123,3 +125,75 @@ def test_waste_rules_are_valid():
 def test_light_tunable_cct_range():
     cap = next(c for c in get_load_class("light.tunable").capabilities if c.name == "cct")
     assert (cap.kind, cap.lo, cap.hi, cap.unit) == ("kelvin", 2700, 6500, "K")
+
+
+def test_every_position_and_tilt_capability_has_semantics():
+    caps = [c for lc in REGISTRY.values() for c in lc.capabilities if c.kind in ("position", "tilt")]
+    assert caps
+    for cap in caps:
+        assert cap.semantics, cap
+
+
+def test_shade_semantics_say_one_is_open():
+    for name in ("shade.curtain", "shade.roller", "shade.venetian", "shade.skylight"):
+        pos = next(c for c in get_load_class(name).capabilities if c.name == "position")
+        assert "1=open" in pos.semantics, name
+
+
+def test_every_non_sensor_class_has_on_power():
+    for lc in REGISTRY.values():
+        if not lc.is_sensor:
+            assert "on" in lc.power_w, lc.name
+
+
+def test_power_values_non_negative():
+    assert all(v >= 0 for lc in REGISTRY.values() for v in lc.power_w.values())
+
+
+MINIMAL = """\
+light.onoff:
+  domain: lighting
+  matter_device_type: on_off_light
+  capabilities:
+    - {name: power, kind: binary}
+  power_w: {"on": 12}
+  power_source: assumption
+  waste_rule: unattended
+  rooms: [living]
+"""
+
+
+def test_minimal_fixture_loads():
+    assert set(load_registry(MINIMAL)) == {"light.onoff"}
+
+
+@pytest.mark.parametrize("text", ["", "- a\n- b\n", "just a string\n"])
+def test_empty_or_non_mapping_yaml_raises(text):
+    with pytest.raises(ValueError, match="mapping"):
+        load_registry(text)
+
+
+@pytest.mark.parametrize("text, must_name", [
+    (MINIMAL + MINIMAL, "light.onoff"),
+    (MINIMAL.replace("kind: binary", "kind: sparkle"), "light.onoff"),
+    (MINIMAL.replace("waste_rule: unattended", "waste_rule: sometimes"), "light.onoff"),
+    (MINIMAL.replace("power_source: assumption", "power_source: 12 W"), "light.onoff"),
+    (MINIMAL.replace('{"on": 12}', "{on: 12}"), "light.onoff"),
+    (MINIMAL.replace("    - {name: power, kind: binary}\n",
+                     "    - {name: power, kind: binary}\n"
+                     "    - {name: level, kind: level, lo: 0, hi: 100}\n"), "light.onoff"),
+    (MINIMAL.replace("    - {name: power, kind: binary}\n",
+                     "    - {name: power, kind: binary}\n"
+                     "    - {name: power, kind: binary}\n"), "light.onoff"),
+    (MINIMAL.replace('{"on": 12}', '{"on": -1}'), "light.onoff"),
+    (MINIMAL.replace('{"on": 12}', '{standby: 1}'), "light.onoff"),
+    (MINIMAL.replace("kind: binary}", "kind: position}"), "light.onoff"),
+])
+def test_malformed_registry_raises_naming_class(text, must_name):
+    with pytest.raises(ValueError, match=must_name):
+        load_registry(text)
+
+
+def test_duplicate_class_key_is_named():
+    with pytest.raises(ValueError, match="duplicate key 'light.onoff'"):
+        load_registry(MINIMAL + MINIMAL)

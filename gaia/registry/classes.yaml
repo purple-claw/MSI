@@ -8,9 +8,12 @@
 # Capability kinds: binary (implicit 0/1), level/position/tilt/hue/saturation (0-1),
 #   kelvin/celsius/count (explicit lo/hi), enum (values), event.
 # Where the research gives a range, the value is the midpoint and the range is in a comment.
-# Source of every number: research §3, .superpowers/research/g2-load-taxonomy.md.
+# Power numbers: power_source is the URL of the research figure (research §3,
+# .superpowers/research/g2-load-taxonomy.md) for the five sourced classes, else `assumption`.
+# Where a class has a URL source but a power key is not from that source, a comment says so.
 
 # ---------- Lighting ----------
+# assumption: capability ranges and power_w unless power_source is a URL
 
 light.onoff:
   domain: lighting
@@ -99,6 +102,7 @@ light.festival:
   rooms: [balcony, facade, terrace, gate]
 
 # ---------- Media ----------
+# assumption: capability ranges and power_w unless power_source is a URL
 
 media.tv:
   domain: media
@@ -151,7 +155,8 @@ media.speaker:
     - {name: volume, kind: level, lo: 0, hi: 1}
     - {name: mute, kind: binary}
   # Sonos Arc idle draw 4.3 W at 120 V (Tier A). Playback draw is unsourced, so no `on` entry.
-  power_w: {standby: 4.3}
+  # on 20 W is an assumption. The URL below sources standby only.
+  power_w: {"on": 20, standby: 4.3}
   power_source: https://support.sonos.com/en/article/sonos-power-consumption-while-idle
   waste_rule: unattended
   rooms: [living, bedroom]
@@ -199,13 +204,15 @@ media.screen_motorised:
   domain: media
   matter_device_type: null
   capabilities:
-    - {name: position, kind: position, lo: 0, hi: 1}
-  power_w: {active: 30}
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=down, 0=rolled up"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 30}
   power_source: assumption
   waste_rule: none
   rooms: [living]
 
 # ---------- Climate and air ----------
+# assumption: capability ranges and power_w unless power_source is a URL
 
 climate.split_ac:
   domain: climate
@@ -305,14 +312,17 @@ air.dehumidifier:
   rooms: [bedroom, utility]
 
 # ---------- Shading ----------
-# Position: 0-1 normalised. Direction (0 = open or closed) is not standardised across vendors.
+# assumption: capability ranges and power_w (no URL sources in this group)
+# Position and tilt are normalised 0-1. Direction is set per capability in `semantics`,
+# because vendors do not standardise it.
 
 shade.curtain:
   domain: shading
   matter_device_type: window_covering
   capabilities:
-    - {name: position, kind: position, lo: 0, hi: 1}
-  power_w: {active: 40}
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=open, 0=closed"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 40}
   power_source: assumption
   waste_rule: none
   rooms: [living, bedroom]
@@ -321,8 +331,9 @@ shade.roller:
   domain: shading
   matter_device_type: window_covering
   capabilities:
-    - {name: position, kind: position, lo: 0, hi: 1}
-  power_w: {active: 30}
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=open, 0=closed"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 30}
   power_source: assumption
   waste_rule: none
   rooms: [living, bedroom]
@@ -331,9 +342,10 @@ shade.venetian:
   domain: shading
   matter_device_type: window_covering
   capabilities:
-    - {name: position, kind: position, lo: 0, hi: 1}
-    - {name: tilt, kind: tilt, lo: 0, hi: 1}
-  power_w: {active: 30}
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=open, 0=closed"}
+    - {name: tilt, kind: tilt, lo: 0, hi: 1, semantics: "1=slats open, 0=slats closed"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 30}
   power_source: assumption
   waste_rule: none
   rooms: [living, bedroom]
@@ -342,13 +354,15 @@ shade.skylight:
   domain: shading
   matter_device_type: window_covering
   capabilities:
-    - {name: position, kind: position, lo: 0, hi: 1}
-  power_w: {active: 40}
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=open, 0=closed"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 40}
   power_source: assumption
   waste_rule: none
   rooms: [living, kitchen]
 
 # ---------- Water, kitchen, utility ----------
+# assumption: capability ranges and power_w unless power_source is a URL
 
 water.geyser:
   domain: water
@@ -455,13 +469,14 @@ misc.mosquito_repellent:
   rooms: [bedroom, living]
 
 # ---------- Security and access ----------
+# assumption: capability ranges and power_w unless power_source is a URL
 
 lock.smart:
   domain: security
   matter_device_type: door_lock
   capabilities:
     - {name: state, kind: enum, values: [locked, unlocked]}
-  power_w: {standby: 0.1}
+  power_w: {"on": 2, standby: 0.1}
   power_source: assumption
   waste_rule: none
   rooms: [entrance]
@@ -471,7 +486,7 @@ doorbell.video:
   matter_device_type: null
   capabilities:
     - {name: press, kind: event}
-  power_w: {standby: 2}
+  power_w: {"on": 2, standby: 2}
   power_source: assumption
   waste_rule: none
   rooms: [entrance]
@@ -480,8 +495,9 @@ gate.motor:
   domain: security
   matter_device_type: null
   capabilities:
-    - {name: position, kind: position, lo: 0, hi: 1}
-  power_w: {active: 100}
+    - {name: position, kind: position, lo: 0, hi: 1, semantics: "1=open, 0=closed"}
+  # motor draw while moving (assumption)
+  power_w: {"on": 100}
   power_source: assumption
   waste_rule: none
   rooms: [outdoor]
@@ -498,6 +514,7 @@ cctv.camera:
   rooms: [entrance, balcony]
 
 # ---------- Sensors (zero modelled draw) ----------
+# assumption: capability ranges and power_w unless power_source is a URL
 
 sensor.motion:
   domain: sensing
@@ -592,6 +609,7 @@ meter.energy:
   rooms: [entrance]
 
 # ---------- Keypads ----------
+# assumption: capability ranges and power_w unless power_source is a URL
 
 keypad.scene:
   domain: keypad
