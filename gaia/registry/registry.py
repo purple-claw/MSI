@@ -4,6 +4,7 @@ Each class says what it can do (capabilities), its rated power per state, where 
 came from (a URL, or the literal ``assumption``), its waste rule and the rooms it appears in.
 """
 
+import math
 import re
 from dataclasses import dataclass
 from importlib.resources import files
@@ -38,6 +39,7 @@ class Capability:
     unit: str | None
     values: tuple[str, ...] | None
     semantics: str | None = None
+    initial: float | str | None = None  # the stored value before any command; None: the default
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,7 @@ class _CapabilitySpec(BaseModel):
     unit: str | None = None
     values: tuple[str, ...] | None = None
     semantics: str | None = None
+    initial: float | str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -109,7 +112,21 @@ class _CapabilitySpec(BaseModel):
             raise ValueError(f"capability {self.name!r} needs lo < hi")
         if self.kind in SEMANTICS_KINDS and not self.semantics:
             raise ValueError(f"{self.kind} capability {self.name!r} needs semantics")
+        if self.initial is not None:
+            self._check_initial()
         return self
+
+    def _check_initial(self):
+        if self.kind == "event":
+            raise ValueError(f"event capability {self.name!r} takes no initial value")
+        if self.kind == "enum":
+            if self.initial not in self.values:
+                raise ValueError(f"enum capability {self.name!r} initial {self.initial!r} not in values")
+            return
+        if isinstance(self.initial, str) or not math.isfinite(self.initial):
+            raise ValueError(f"capability {self.name!r} initial must be a finite number: {self.initial!r}")
+        if self.lo is not None and self.initial < self.lo or self.hi is not None and self.initial > self.hi:
+            raise ValueError(f"capability {self.name!r} initial {self.initial!r} outside [{self.lo}, {self.hi}]")
 
 
 class _LoadClassSpec(BaseModel):
@@ -154,7 +171,7 @@ def _build(name: str, spec: _LoadClassSpec) -> LoadClass:
         domain=spec.domain,
         matter_device_type=spec.matter_device_type,
         capabilities=tuple(
-            Capability(c.name, c.kind, c.lo, c.hi, c.unit, c.values, c.semantics)
+            Capability(c.name, c.kind, c.lo, c.hi, c.unit, c.values, c.semantics, c.initial)
             for c in spec.capabilities
         ),
         power_w=dict(spec.power_w),

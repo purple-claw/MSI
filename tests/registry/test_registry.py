@@ -205,3 +205,22 @@ def test_sleeper_flag_is_on_for_climate_and_ceiling_fans_only():
     flagged = {name for name, lc in REGISTRY.items() if lc.sleeper_counts_as_attended}
     assert flagged == {"climate.split_ac", "climate.vrf_indoor", "climate.cassette_ac",
                        "fan.bldc_ceiling", "fan.ceiling"}
+
+
+def test_initial_is_read_into_capability():
+    text = MINIMAL.replace("    - {name: power, kind: binary}\n",
+                           "    - {name: power, kind: binary}\n"
+                           "    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}\n")
+    cap = {c.name: c for c in load_registry(text)["light.onoff"].capabilities}["playback"]
+    assert cap.initial == "stopped"
+
+
+@pytest.mark.parametrize("cap_yaml, must_name", [
+    ("{name: playback, kind: enum, values: [playing, stopped], initial: paused}", "light.onoff"),
+    ("{name: level, kind: level, lo: 0, hi: 1, initial: 2}", "light.onoff"),
+    ("{name: power, kind: event, initial: 1}", "light.onoff"),
+])
+def test_bad_initial_raises_naming_class(cap_yaml, must_name):
+    text = MINIMAL.replace("    - {name: power, kind: binary}\n", f"    - {cap_yaml}\n")
+    with pytest.raises(ValueError, match=must_name):
+        load_registry(text)

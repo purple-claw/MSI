@@ -5,7 +5,9 @@
 #   power_w (state -> watts; keys on | standby | active), power_source
 #   (URL, or the literal `assumption`), waste_rule (unattended | unattended:<grace min> | overrun:<min> | none),
 #   rooms, sleeper_counts_as_attended (optional, default false: a sleeping occupant counts as
-#   attending the load for the waste rule).
+#   attending the load for the waste rule), and per capability an optional `initial` (the stored
+#   value before any command; checked against values or lo..hi). Without it an enum starts at its
+#   first value and a number at lo (0 for the 0-1 kinds).
 # Capability kinds: binary (implicit 0/1), level/position/tilt/hue/saturation (0-1),
 #   kelvin/celsius/count (explicit lo/hi), enum (values), event.
 # Where the research gives a range, the value is the midpoint and the range is in a comment.
@@ -111,7 +113,7 @@ media.tv:
   capabilities:
     - {name: power, kind: binary}
     - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
-    - {name: playback, kind: enum, values: [playing, paused, stopped]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
     - {name: volume, kind: level, lo: 0, hi: 1}
     - {name: mute, kind: binary}
   power_w: {"on": 120, standby: 0.5}
@@ -125,7 +127,7 @@ media.stb_dth:
   capabilities:
     - {name: power, kind: binary}
     - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
-    - {name: playback, kind: enum, values: [playing, paused, stopped]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
   # Tata Sky guide: 18 W in use, 17 W standby (Tier C, not measured).
   # waste_rule none: at TV-off the box goes to standby (power 0), which is counted through standby.
   power_w: {"on": 18, standby: 17}
@@ -139,7 +141,7 @@ media.streamer:
   capabilities:
     - {name: power, kind: binary}
     - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
-    - {name: playback, kind: enum, values: [playing, paused, stopped]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
     - {name: volume, kind: level, lo: 0, hi: 1}
     - {name: mute, kind: binary}
   power_w: {"on": 6, standby: 0.5}
@@ -153,7 +155,7 @@ media.speaker:
   capabilities:
     - {name: power, kind: binary}
     - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
-    - {name: playback, kind: enum, values: [playing, paused, stopped]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
     - {name: volume, kind: level, lo: 0, hi: 1}
     - {name: mute, kind: binary}
   # Sonos Arc idle draw 4.3 W at 120 V (Tier A). Playback draw is unsourced, so no `on` entry.
@@ -170,7 +172,7 @@ media.soundbar:
   capabilities:
     - {name: power, kind: binary}
     - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
-    - {name: playback, kind: enum, values: [playing, paused, stopped]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
     - {name: volume, kind: level, lo: 0, hi: 1}
     - {name: mute, kind: binary}
   power_w: {"on": 40, standby: 0.5}
@@ -197,7 +199,7 @@ media.projector:
   capabilities:
     - {name: power, kind: binary}
     - {name: source, kind: enum, values: [stb, streamer, airplay, spotify, hdmi1, hdmi2, bluetooth, radio, tv_app]}
-    - {name: playback, kind: enum, values: [playing, paused, stopped]}
+    - {name: playback, kind: enum, values: [playing, paused, stopped], initial: stopped}
   power_w: {"on": 280, standby: 0.5}
   power_source: assumption
   waste_rule: none

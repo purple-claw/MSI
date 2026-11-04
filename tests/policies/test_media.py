@@ -101,7 +101,7 @@ def test_tv_session_shape(monkeypatch):
     on_ts = cmds[0].ts_utc
     off_ts = cmds[-1].ts_utc
     assert on_ts < off_ts
-    assert all(e.capability != "playback" for e in cmds)  # no pauses: playback never changes
+    assert [_label_for(run, e).device_action for e in cmds if e.capability == "playback"] == ["play", "stop"]
 
 
 def test_stb_standby_not_waste():
@@ -137,6 +137,7 @@ def test_music_only_with_speaker(monkeypatch):
     assert actions[0] == "turn_on"
     assert actions[-1] == "turn_off"
     assert actions[-2] == "stop"
+    assert "play" in actions  # a fresh speaker starts stopped, so its first session plays
 
 
 def test_music_continues_across_music_activities_in_one_room():
@@ -188,7 +189,8 @@ def test_pause_only_while_tv_on(monkeypatch):
     pauses = [e for e in cmds if e.capability == "playback"]
     assert pauses, "a pause every attended minute must produce playback events"
     assert all(on_ts <= e.ts_utc <= off_ts for e in pauses)
-    assert [_label_for(run, e).device_action for e in pauses[:2]] == ["pause", "play"]
+    first_pause = next(i for i, e in enumerate(pauses) if _label_for(run, e).device_action == "pause")
+    assert _label_for(run, pauses[first_pause + 1]).device_action == "play"
 
 
 def test_last_leaver_forgets_then_timer_switches_tv_off(monkeypatch):
@@ -206,8 +208,9 @@ def test_last_leaver_forgets_then_timer_switches_tv_off(monkeypatch):
     assert media_mod.FORGET_OFF_MIN - 1 <= gap_min <= media_mod.FORGET_OFF_MAX + 3  # jitter and latency
     off = [e for e in run.events if e.kind == EventKind.state and e.load_id == tv
            and e.capability == "power" and e.value == 0.0]
-    assert off and _label_for(run, next(e for e in run.events if e.kind == EventKind.command
-                                        and e.event_id == off[-1].ref_id)).trigger == "timer"
+    off_cmd = _label_for(run, next(e for e in run.events if e.kind == EventKind.command
+                                   and e.event_id == off[-1].ref_id))
+    assert off and off_cmd.trigger == "timer" and off_cmd.intent == "energy_saving"
 
 
 def test_attentive_leaver_turns_tv_off_on_exit():
@@ -286,3 +289,34 @@ def test_persona_media_prefs_have_defaults():
                       return_min=None, forgetfulness=0.1, tech_affinity={"wall": 1.0},
                       light_threshold_lux=120)
     assert (persona.tv_source_pref, persona.volume_pref, persona.music_affinity) == (0.6, 0.35, 0.4)
+
+
+def test_first_session_on_fresh_home_plays(monkeypatch):
+    monkeypatch.setattr(media_mod, "PAUSE_P", 0.0)
+    seed = _seed_with("villa", lambda m: _has_in_room(m, "h1:living", "media.tv"))
+    rows = _rows(("bedroom_1", "sleep", 420), ("living", "living", 20), ("living", "tv", 30),
+                 ("living", "living", 10), ("bedroom_1", "sleep", 100))
+    run, manifest, _ = _run("villa", seed, rows, tv_source_pref=0.0, volume_pref=0.35)
+    tv = next(ld.load_id for ld in manifest.loads if ld.room_id == "h1:living"
+              and ld.load_class == "media.tv")
+    actions = [_label_for(run, e).device_action for e in run.events
+               if e.kind == EventKind.command and e.load_id == tv]
+    assert actions[:4] == ["turn_on", "select_source", "set_volume", "play"]
+
+
+def test_second_session_starts_from_stopped_and_plays_again(monkeypatch):
+    monkeypatch.setattr(media_mod, "PAUSE_P", 0.0)
+    seed = _seed_with("villa", lambda m: _has_in_room(m, "h1:living", "media.tv"))
+    rows = _rows(("bedroom_1", "sleep", 420), ("living", "tv", 30), ("living", "living", 20),
+                 ("living", "tv", 30), ("living", "living", 10), ("bedroom_1", "sleep", 100))
+    run, manifest, _ = _run("villa", seed, rows, tv_source_pref=0.0, volume_pref=0.35)
+    tv = next(ld.load_id for ld in manifest.loads if ld.room_id == "h1:living"
+              and ld.load_class == "media.tv")
+    actions = [_label_for(run, e).device_action for e in run.events
+               if e.kind == EventKind.command and e.load_id == tv]
+    assert actions.count("play") == 2
+    assert actions.count("stop") == 2
+    assert actions.count("turn_on") == 2 and actions.count("turn_off") == 2
+    for i, a in enumerate(actions):
+        if a == "turn_off":
+            assert actions[i - 1] == "stop"  # playback is stopped before power off

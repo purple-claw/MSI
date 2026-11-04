@@ -16,6 +16,8 @@ _CELSIUS_INITIAL = 24.0
 
 
 def _initial(cap: Capability) -> Value:
+    if cap.initial is not None:
+        return cap.initial if isinstance(cap.initial, str) else float(cap.initial)
     if cap.kind == "kelvin":
         return float(round((cap.lo + cap.hi) / 2))
     if cap.kind == "celsius":

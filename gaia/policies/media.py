@@ -53,6 +53,7 @@ MUSIC_ACTIVITIES = frozenset({"cook", "dinner", "relax", "wind_down"})
 MUSIC_SOURCES: tuple[tuple[str, float], ...] = (("spotify", 0.5), ("airplay", 0.4), ("radio", 0.1))
 TV_ACTIVITY = "tv"
 ENTERTAINMENT = "entertainment"
+ENERGY_SAVING = "energy_saving"
 TV_CLASS = "media.tv"
 STB_CLASS = "media.stb_dth"
 STREAMER_CLASS = "media.streamer"
@@ -243,11 +244,15 @@ class Media:
             return "streamer", streamer
         return "tv_app", None
 
-    def _tv_off(self, ctx: TickContext, session: _TvSession, who: _Who, out: list[Intent]) -> None:
+    def _tv_off(self, ctx: TickContext, session: _TvSession, who: _Who, out: list[Intent],
+                intent: str = ENTERTAINMENT) -> None:
+        """Stop playback, then power the TV off and its source to standby. The next session starts
+        from stopped, so its first play is a command."""
         del self._sessions[session.tv.load_id]
-        self._change(ctx, session.tv, "power", 0.0, who, out)
+        self._change(ctx, session.tv, "playback", "stopped", who, out, intent)
+        self._change(ctx, session.tv, "power", 0.0, who, out, intent)
         if session.source is not None:
-            self._change(ctx, session.source, "power", 0.0, who, out)  # the box goes to standby
+            self._change(ctx, session.source, "power", 0.0, who, out, intent)  # the box goes to standby
 
     def _pauses(self, ctx: TickContext, rng, out: list[Intent]) -> None:
         for session in tuple(self._sessions.values()):
@@ -264,11 +269,11 @@ class Media:
 
     def _timers(self, ctx: TickContext, out: list[Intent]) -> None:
         for session in tuple(self._sessions.values()):
-            if session.resume_at is not None and ctx.minute >= session.resume_at:
+            if session.forgotten and session.off_at is not None and ctx.minute >= session.off_at:
+                self._tv_off(ctx, session, _NO_ONE, out, ENERGY_SAVING)  # no resume: one playback intent
+            elif session.resume_at is not None and ctx.minute >= session.resume_at:
                 session.resume_at = None
                 self._change(ctx, session.tv, "playback", "playing", session.paused_by or _NO_ONE, out)
-            if session.forgotten and session.off_at is not None and ctx.minute >= session.off_at:
-                self._tv_off(ctx, session, _NO_ONE, out)
 
     def _session_in(self, room_id: str | None) -> _TvSession | None:
         if room_id is None:
@@ -346,7 +351,7 @@ class Media:
     # --- intents ---------------------------------------------------------------
 
     def _change(self, ctx: TickContext, load: Load, capability: str, value: float | str, who: _Who,
-                out: list[Intent]) -> None:
+                out: list[Intent], intent: str = ENTERTAINMENT) -> None:
         """Send a command only when the device does not already hold the value."""
         current = ctx.devices.get(load.load_id, capability)
         if isinstance(value, str):
@@ -357,7 +362,7 @@ class Media:
         person_id, activity, trigger = who
         out.append(Intent(
             load_id=load.load_id, capability=capability, value=value, person_id=person_id,
-            activity=activity, intent=ENTERTAINMENT, trigger=trigger,
+            activity=activity, intent=intent, trigger=trigger,
             device_action=_action(capability, value), policy=self.name, source=None,
         ))
 
