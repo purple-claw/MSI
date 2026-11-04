@@ -5,7 +5,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from gaia.engine.sim import HomeSpec, _build_grids, simulate_home
+from gaia.engine.sim import SLEEP_CODE, HomeSpec, _build_grids, _Run, simulate_home
 from gaia.engine.timeline import MINUTES_PER_DAY
 from gaia.schema.events import EventKind
 from gaia.world.calendar import local_midnight_utc_ms
@@ -123,3 +123,40 @@ def test_per_load_states_alternate_and_follow_commands(archetype, seed):
 def test_emitted_waste_is_at_least_a_minute(archetype, seed):
     for w in _run(seed, archetype).gt_waste:
         assert w.end_ts_utc is None or w.end_ts_utc - w.start_ts_utc >= 60_000, w
+
+
+
+@pytest.mark.parametrize("archetype", ARCHETYPES)
+@settings(max_examples=25, deadline=None)
+@given(seed=SEEDS)
+def test_lit_unoccupied_minutes_lie_inside_waste(archetype, seed):
+    # Each minute that ends with a main light on and no awake member in its room must be covered
+    # by an emitted GtWaste interval. Light state is the simulator's decision-time state, so a
+    # leave-room switch-off with command jitter is not counted as lit.
+    spec = _spec(seed, archetype)
+    manifest, household, rooms, acts, names = _build_grids(spec)
+    total = DAYS * MINUTES_PER_DAY
+    start = local_midnight_utc_ms(START, 330)
+    run = _Run(spec, manifest, household, start, rooms, acts, names)
+    n = len(run.members)
+    lit_unoccupied: list[tuple[int, int]] = []  # (room index, minute)
+    for m in range(total):
+        tick = start + m * 60_000
+        for i in range(n):
+            if m > 0:
+                run._leave(i, m, tick)
+                run._fall_asleep(i, m, tick)
+            run._close_waste_on_entry(i, m, tick)
+            run._presence(i, m, tick)
+        for r in range(len(run.mains)):
+            if run.mains[r] is None or not run.light_on[r]:
+                continue
+            if not any(rooms[j][m] == r and acts[j][m] != SLEEP_CODE for j in range(n)):
+                lit_unoccupied.append((r, m))
+    run.finish()
+    for r, m in lit_unoccupied:
+        load_id = run.mains[r].load_id
+        tick = start + m * 60_000
+        assert any(w.load_id == load_id and w.start_ts_utc <= tick
+                   and (w.end_ts_utc is None or w.end_ts_utc > tick)
+                   for w in run.gt_waste), (manifest.rooms[r].room_id, m)
