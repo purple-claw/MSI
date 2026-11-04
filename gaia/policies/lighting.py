@@ -156,27 +156,27 @@ class Lighting:
             return  # a later awake leaver in the same minute decides the exit
         if forgets(person.persona, rng):
             return  # every lit circuit stays on; waste tracking notices
-        actor = None if person.room_id is None or person.asleep else person  # away or asleep: the system
+        pid, activity = person.acting() or (None, _NONE)
         for load in self._room_loads[room]:
-            self._power(ctx, load, False, None if actor is None else actor.person_id,
-                        _NONE if actor is None else actor.activity, "energy_saving",
-                        "room_exit", "turn_off", None, out)
+            self._power(ctx, load, False, pid, activity, "energy_saving", "room_exit", "turn_off", None, out)
 
     def _fall_asleep(self, ctx, people, i, rng, out: list[Intent]) -> None:
         person = people[i]
         bed = person.room_id
         others_awake = [q for j, q in enumerate(people) if j != i and not q.asleep]
         if bed is not None and bed in self._lit_rooms and not any(q.room_id == bed for q in others_awake):
-            for load in self._room_loads[bed]:  # the sleeper is asleep: the system switches it off
-                self._power(ctx, load, False, None, _NONE, "illumination", "sleep", "turn_off", None, out)
+            pid, activity = person.acting() or (None, _NONE)
+            for load in self._room_loads[bed]:
+                self._power(ctx, load, False, pid, activity, "illumination", "sleep", "turn_off", None, out)
         if others_awake:
             return
         for room_id in self._light_rooms:
             if room_id not in self._lit_rooms or any(q.room_id == room_id for q in people):
                 continue
             if rng.random() < CLEANUP_P:
+                pid, activity = person.acting() or (None, _NONE)
                 for load in self._room_loads[room_id]:
-                    self._power(ctx, load, False, None, _NONE, "cleanup",
+                    self._power(ctx, load, False, pid, activity, "cleanup",
                                 "last_to_sleep", "turn_off", Source.app, out)
 
     def _activity_change(self, ctx, person: PersonNow, out: list[Intent]) -> None:

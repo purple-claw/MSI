@@ -85,7 +85,7 @@ def test_sleep_switches_off_with_sleep_label():
     run.finish()
     (off,) = [lb for lb in run.labels if lb.trigger == "sleep"]
     assert (off.intent, off.device_action, off.person_id, off.activity) == (
-        "illumination", "turn_off", None, "none")  # the sleeper is asleep: the system switches off
+        "illumination", "turn_off", a.person_id, "tv")  # fell asleep this minute: the activity a minute earlier
 
 
 def test_leaving_the_room_switches_off_with_room_exit_label():
@@ -123,7 +123,7 @@ def test_last_to_sleep_cleanup_switches_off_an_unoccupied_lit_room():
     (off,) = Lighting().tick(ctx, FixedRng(0.0))  # draw < 0.5: cleanup fires
     assert (off.load_id, off.value, off.intent, off.trigger, off.device_action) == (
         living, 0.0, "cleanup", "last_to_sleep", "turn_off")
-    assert off.person_id is None and off.activity == "none"  # asleep: the system
+    assert off.person_id == a.person_id and off.activity == "tv"  # fell asleep this minute
     assert Lighting().tick(ctx, FixedRng(0.99)) == []  # draw >= 0.5: light stays on
 
 

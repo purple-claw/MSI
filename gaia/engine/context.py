@@ -39,6 +39,19 @@ class PersonNow:
     activity: str
     prev_room_id: str | None  # the room one minute earlier (equal to room_id at minute 0)
     prev_asleep: bool
+    prev_activity: str  # the activity one minute earlier (equal to activity at minute 0)
+
+    def acting(self) -> tuple[str, str] | None:
+        """(person id, activity) when this person may be named as the actor of a command at this
+        minute, else None. A person is an actor when awake and at home now (with the activity they
+        have now), or when they were awake and at home one minute earlier and changed state this
+        minute (fell asleep, left a room, or left home). Then the activity is the one they had one
+        minute earlier. Someone asleep or away at both minutes is never an actor."""
+        if self.room_id is not None and not self.asleep:
+            return self.person_id, self.activity
+        if self.prev_room_id is not None and not self.prev_asleep:
+            return self.person_id, self.prev_activity
+        return None
 
 
 class DeviceView:
@@ -130,6 +143,7 @@ class OccupancyGrid:
                     activity=self._act_names[a],
                     prev_room_id=self._room_ids[pr] if pr >= 0 else None,
                     prev_asleep=pa == SLEEP_CODE,
+                    prev_activity=self._act_names[pa],
                 )
                 self._interned[i][key] = person
             out.append(person)

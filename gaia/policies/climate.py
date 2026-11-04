@@ -69,18 +69,10 @@ def fan_speed(heat: float) -> float:
     return float(1 + round(4 * heat))
 
 
-def _actor(person: PersonNow) -> PersonNow | None:
-    """The person who operates a device: None (the system) for someone asleep."""
-    return None if person.asleep else person
-
-
-def _present(person: PersonNow) -> PersonNow | None:
-    """The person, or None (the system) once they have left the home by this minute."""
-    return None if person.room_id is None or person.asleep else person
-
-
 def _who(person: PersonNow | None) -> tuple[str | None, str]:
-    return (None, "none") if person is None else (person.person_id, person.activity)
+    """The actor of a command: the person (PersonNow.acting), else the system."""
+    acting = None if person is None else person.acting()
+    return (None, "none") if acting is None else acting
 
 
 def _differs(current, value) -> bool:
@@ -185,29 +177,26 @@ class Climate:
                 self._fans_on(ctx, person, person.room_id, fan_speed(heat), trigger, out)
 
     def _ac_on(self, ctx, person: PersonNow, trigger: str, rng, out: list[Intent]) -> None:
-        """The AC's setpoint follows the persona. Its actor is the person when awake; a sleeper's
-        AC is switched on by the system."""
+        """The AC's setpoint follows the persona. The actor is the person (see PersonNow.acting)."""
         room = person.room_id
-        actor = _actor(person)
         units = [ld for ld in self._ac[room] if not ctx.devices.is_on(ld.load_id)]
         if not units:
             return
         for ld in units:
-            self._power(ld, True, actor, "thermal_comfort", trigger, out)
-            self._set(ctx, ld, "mode", AC_MODE, actor, "thermal_comfort", trigger, out)
-            self._set(ctx, ld, "setpoint", person.persona.ac_setpoint, actor, "thermal_comfort", trigger, out)
-            self._set(ctx, ld, "fan_speed", AC_FAN_SPEED, actor, "thermal_comfort", trigger, out)
+            self._power(ld, True, person, "thermal_comfort", trigger, out)
+            self._set(ctx, ld, "mode", AC_MODE, person, "thermal_comfort", trigger, out)
+            self._set(ctx, ld, "setpoint", person.persona.ac_setpoint, person, "thermal_comfort", trigger, out)
+            self._set(ctx, ld, "fan_speed", AC_FAN_SPEED, person, "thermal_comfort", trigger, out)
         if rng.random() < AC_FAN_P:
             self._fans_on(ctx, person, room, AC_COUPLED_FAN_SPEED, trigger, out)
 
     def _fans_on(self, ctx, person: PersonNow, room: str, speed: float, trigger: str,
                  out: list[Intent]) -> None:
-        actor = _actor(person)
         for ld in self._fans.get(room, ()):
             if ctx.devices.is_on(ld.load_id):
                 continue
-            self._power(ld, True, actor, "thermal_comfort", trigger, out)
-            self._set(ctx, ld, "fan_speed", speed, actor, "thermal_comfort", trigger, out)
+            self._power(ld, True, person, "thermal_comfort", trigger, out)
+            self._set(ctx, ld, "fan_speed", speed, person, "thermal_comfort", trigger, out)
 
     # --- exits and wake-ups -------------------------------------------------------
 
@@ -225,7 +214,7 @@ class Climate:
             return  # everything stays on; the waste tracker notices
         for ld in loads:
             if ctx.devices.is_on(ld.load_id):
-                self._power(ld, False, _present(person), "energy_saving", "room_exit", out)
+                self._power(ld, False, person, "energy_saving", "room_exit", out)
 
     def _wake(self, ctx, people, i: int, rng, out: list[Intent]) -> None:
         person = people[i]

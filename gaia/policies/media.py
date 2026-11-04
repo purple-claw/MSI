@@ -68,10 +68,9 @@ _NO_ONE = (None, "none", "timer")  # the actor of a timer event: nobody, the sys
 
 
 def _doer(person: PersonNow, trigger: str) -> "_Who":
-    """The person who did it, or nobody once they have left the home or fallen asleep."""
-    if person.room_id is None or person.asleep:
-        return (None, "none", trigger)
-    return (person.person_id, person.activity, trigger)
+    """The person who did it (PersonNow.acting), or nobody."""
+    acting = person.acting()
+    return (None, "none", trigger) if acting is None else (acting[0], acting[1], trigger)
 
 # A cause for one command: (person id or None, activity label, trigger).
 _Who = tuple[str | None, str, str]
@@ -85,6 +84,7 @@ class _TvSession:
     since: int  # minute the session turned on
     forgotten: bool = False
     resume_at: int | None = None  # minute a pause ends
+    paused_by: str | None = None  # id of the person who paused it, to resume it if they are still there
     off_at: int | None = None  # minute a forgotten TV goes off
 
 
@@ -285,6 +285,7 @@ class Media:
             head = watchers[0]
             who = (head.person_id, head.activity, "timer")
             session.resume_at = ctx.minute + int(rng.integers(PAUSE_MIN, PAUSE_MAX + 1))
+            session.paused_by = head.person_id
             self._change(ctx, session.tv, "playback", "paused", who, out)
 
     def _timers(self, ctx: TickContext, out: list[Intent]) -> None:
@@ -293,7 +294,14 @@ class Media:
                 self._tv_off(ctx, session, _NO_ONE, out, ENERGY_SAVING)  # no resume: one playback intent
             elif session.resume_at is not None and ctx.minute >= session.resume_at:
                 session.resume_at = None
-                self._change(ctx, session.tv, "playback", "playing", _NO_ONE, out)  # the pause timer
+                self._change(ctx, session.tv, "playback", "playing", self._resumer(ctx, session), out)
+
+    def _resumer(self, ctx: TickContext, session: _TvSession) -> _Who:
+        """The pauser, when they are still at home and awake; else the pause timer (the system)."""
+        for person in ctx.people:
+            if person.person_id == session.paused_by and person.room_id is not None and not person.asleep:
+                return (person.person_id, person.activity, "timer")
+        return _NO_ONE
 
     def _session_in(self, room_id: str | None) -> _TvSession | None:
         if room_id is None:
@@ -338,7 +346,8 @@ class Media:
         if self._theatre_end is not None and ctx.minute >= self._theatre_end[0]:
             owner = self._theatre_end[1]
             self._theatre_end = None
-            self._theatre_off(ctx, (owner, "none", "schedule"), out)
+            who = next((p for p in ctx.people if p.person_id == owner), None)
+            self._theatre_off(ctx, _NO_ONE if who is None else _doer(who, "schedule"), out)
         if self._theatre_plan is not None and ctx.minute >= self._theatre_plan[0]:
             start, length = self._theatre_plan
             self._theatre_plan = None

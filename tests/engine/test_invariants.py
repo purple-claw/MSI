@@ -191,19 +191,30 @@ def test_overrun_waste_starts_after_on_plus_n(archetype, seed):
 @settings(max_examples=10, deadline=None)
 @given(seed=SEEDS)
 def test_labelled_person_is_awake_at_home_and_doing_that_activity(archetype, seed):
-    """Every label that names a person refers to someone awake and at home at the command's minute,
-    doing the activity the label gives."""
+    """Every label that names a person is an actor at its command's minute m (see PersonNow.acting):
+    awake at home at m, doing the label's activity; or, at a transition minute, awake at home at m-1
+    (fell asleep, left a room or left home at m), with the label's activity from m-1."""
     spec = _spec(seed, archetype)
     result = simulate_home(spec)
     manifest, household, rooms, acts, act_names = _build_grids(spec)
     start_ms = local_midnight_utc_ms(spec.start_date, CITIES[spec.city].tz_offset_min)
     index_of = {m.person_id: i for i, m in enumerate(household.members)}
     events = {e.event_id: e for e in result.events}
+
+    def awake_home(i, m):
+        return rooms[i][m] >= 0 and act_names[acts[i][m]] != "sleep"
+
+    def is_actor(i, m, lb):
+        """Actor at minute m: awake at home doing lb's activity, or a transition at m."""
+        if awake_home(i, m):
+            return lb.activity == act_names[acts[i][m]]
+        return m >= 1 and awake_home(i, m - 1) and lb.activity == act_names[acts[i][m - 1]]
+
     for lb in result.labels:
         if lb.person_id is None:
             continue
+        # The command's tick is its timestamp's minute, unless the serial order of the load pushed the
+        # timestamp past the boundary (a previous state arriving late): then the tick is the minute before.
         minute = min((events[lb.event_id].ts_utc - start_ms) // MS_PER_MIN, len(acts[0]) - 1)
         i = index_of[lb.person_id]
-        assert rooms[i][minute] >= 0, ("away", lb)
-        assert act_names[acts[i][minute]] != "sleep", ("asleep", lb)
-        assert lb.activity == act_names[acts[i][minute]], ("activity", lb)
+        assert is_actor(i, minute, lb) or is_actor(i, minute - 1, lb), ("not an actor", lb)
